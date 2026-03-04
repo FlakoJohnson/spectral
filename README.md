@@ -16,11 +16,30 @@ Built on top of [sopa](https://github.com/Macmod/sopa).
 ```bash
 git clone git@github.com:FlakoJohnson/spectral.git
 cd spectral
-go mod tidy
+make setup   # vendors deps + applies go-adws proxy patch (run once)
 make build
 ```
 
 Produces a stripped, static `spectral` binary (no CGO, no debug symbols).
+
+> **Re-run `make setup` after `go mod tidy` or any dependency update.**
+
+## Proxy / tunnelling
+
+**proxychains does not work** with this tool. spectral is compiled with `CGO_ENABLED=0`, which means it uses Go's pure-Go network stack and issues TCP connections via direct syscalls — bypassing `libc connect()` entirely. proxychains works by hooking `connect()` via `LD_PRELOAD`, so it never intercepts spectral's connections.
+
+Use the built-in `-proxy` flag (or env vars) instead:
+
+```bash
+# SOCKS5 via flag
+./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 ...
+
+# SOCKS5 via env var (ALL_PROXY / SOCKS5_PROXY are both read)
+export ALL_PROXY=socks5://127.0.0.1:1080
+./spectral -t 10.10.10.5 ...
+```
+
+All traffic — ADWS (port 9389), Kerberos KDC (port 88), and the unauthenticated rootDSE LDAP probe — is routed through the proxy.
 
 ## Usage
 
@@ -64,40 +83,52 @@ Output & pacing:
   -B  int      Batch size per ADWS pull (default: 100)
   -q           Quiet
   -x           Debug SOAP XML
+  -bh          Also write BloodHound CE zip (users/computers/groups/gpos/trusts)
+
+Proxy:
+  -proxy string  SOCKS5 proxy URL (e.g. socks5://127.0.0.1:1080)
+                 Also reads ALL_PROXY / SOCKS5_PROXY env vars if flag is omitted.
+                 NOTE: proxychains does not work — use this flag instead.
 ```
 
 ## Examples
 
-**Full sweep via proxychains (NTLM PtH):**
+**Full sweep via SOCKS5 proxy (NTLM PtH):**
 ```bash
-proxychains4 -q ./spectral -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -m all -o ./out
+./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -m all -o ./out
 ```
 
 **Attack-path targets only (Kerberos ccache):**
 ```bash
 export KRB5CCNAME=/tmp/jdoe.ccache
-proxychains4 -q ./spectral -t 10.10.10.5 -d corp.local -u jdoe -k -m attack -o ./out
+export ALL_PROXY=socks5://127.0.0.1:1080
+./spectral -t 10.10.10.5 -d corp.local -u jdoe -k -m attack -o ./out
 ```
 
 **Single user deep-dive:**
 ```bash
-proxychains4 -q ./spectral -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -T user:svc_backup
+./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -T user:svc_backup
 ```
 
 **Kerberoastable accounts only:**
 ```bash
-proxychains4 -q ./spectral -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -m kerberoastable
+./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -m kerberoastable
 ```
 
 **Stale accounts (no login in 60 days):**
 ```bash
-proxychains4 -q ./spectral -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -m stale -A 60
+./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -m stale -A 60
 ```
 
 **Slower, quieter run with more jitter:**
 ```bash
-proxychains4 -q ./spectral -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> \
+./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> \
   -m attack -j 2000 -P 5000 -B 50 -o ./out
+```
+
+**BloodHound CE output:**
+```bash
+./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -m all -bh -o ./out
 ```
 
 ## Targeted modes
