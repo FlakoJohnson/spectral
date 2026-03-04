@@ -166,9 +166,9 @@ func (e *Enumerator) resolveGroupDNs(dns []string) ([]adws.ADObject, error) {
 	return out, nil
 }
 
-// attrSlice returns all values of an attribute as a string slice.
+// AttrSliceStr returns all values of an attribute as a string slice.
 // Attributes is map[string][]ADWSValue — key is the attribute name.
-func attrSlice(obj adws.ADObject, name string) []string {
+func AttrSliceStr(obj adws.ADObject, name string) []string {
 	vals, ok := obj.Attributes[name]
 	if !ok {
 		return nil
@@ -179,6 +179,9 @@ func attrSlice(obj adws.ADObject, name string) []string {
 	}
 	return strs
 }
+
+// attrSlice is the package-private alias.
+func attrSlice(obj adws.ADObject, name string) []string { return AttrSliceStr(obj, name) }
 
 // escapeLDAP escapes special characters in an LDAP filter value.
 // Prevents filter injection when user-supplied names are used.

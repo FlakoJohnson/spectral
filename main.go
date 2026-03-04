@@ -52,6 +52,7 @@ Output & pacing:
   -B  int      Batch size per ADWS pull (default: 100)
   -q           Quiet
   -x           Debug SOAP XML
+  -bh          Also write BloodHound CE zip (users/computers/groups/gpos/trusts)
 `, os.Args[0])
 }
 
@@ -76,6 +77,7 @@ func main() {
 		port      = flag.String("r", "9389", "")
 		quiet     = flag.Bool("q", false, "")
 		debugXML  = flag.Bool("x", false, "")
+		bhOut     = flag.Bool("bh", false, "")
 	)
 
 	flag.Usage = usage
@@ -169,6 +171,9 @@ func main() {
 
 	e := enum.New(client, pace, *batch, *baseDN, !*quiet)
 
+	// collector holds sweep results for optional BH output.
+	coll := &collector{}
+
 	// ── Single object lookup ────────────────────────────────────────────
 	if *targetObj != "" {
 		runLookup(e, w, *targetObj)
@@ -176,15 +181,94 @@ func main() {
 
 	// ── Mode-based enumeration ──────────────────────────────────────────
 	for i, m := range modes {
-		runMode(e, w, m, *staleDays)
+		runModeCollect(e, w, m, *staleDays, coll)
 		if i < len(modes)-1 {
 			pace.BetweenTypes()
+		}
+	}
+
+	// ── BloodHound CE output ────────────────────────────────────────────
+	if *bhOut {
+		domainSID := coll.domainSID
+		if domainSID == "" && !*quiet {
+			log.Printf("[*] -bh: domain SID not resolved (run with -m all or -m users to populate)")
+		}
+		if err := output.WriteBHZip(
+			*outDir, *domain, domainSID,
+			coll.users, coll.computers, coll.groups, coll.gpos, coll.trusts,
+		); err != nil {
+			log.Printf("[-] BloodHound zip: %v", err)
 		}
 	}
 
 	if !*quiet {
 		log.Printf("[+] Done. Output saved to: %s", *outDir)
 	}
+}
+
+// collector accumulates sweep results for BloodHound output.
+type collector struct {
+	users     []adws.ADObject
+	computers []adws.ADObject
+	groups    []adws.ADObject
+	gpos      []adws.ADObject
+	trusts    []adws.ADObject
+	domainSID string
+}
+
+// runModeCollect wraps runMode and captures sweep results into the collector.
+func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays int, coll *collector) {
+	type result struct {
+		data interface{}
+		err  error
+	}
+	var res result
+
+	switch m {
+	case "users":
+		data, err := e.Users()
+		res.data, res.err = data, err
+		if err == nil {
+			coll.users = data
+			// Derive domainSID from first user SID (strip last RID component).
+			if len(data) > 0 && coll.domainSID == "" {
+				coll.domainSID = domainSIDFromObject(data[0])
+			}
+		}
+	case "computers":
+		data, err := e.Computers()
+		res.data, res.err = data, err
+		if err == nil {
+			coll.computers = data
+		}
+	case "groups":
+		data, err := e.Groups()
+		res.data, res.err = data, err
+		if err == nil {
+			coll.groups = data
+		}
+	case "gpos":
+		data, err := e.GPOs()
+		res.data, res.err = data, err
+		if err == nil {
+			coll.gpos = data
+		}
+	case "trusts":
+		data, err := e.Trusts()
+		res.data, res.err = data, err
+		if err == nil {
+			coll.trusts = data
+		}
+	default:
+		runMode(e, w, m, staleDays)
+		return
+	}
+
+	if res.err != nil {
+		log.Printf("[-] %s: %v", m, res.err)
+		return
+	}
+	w.Write(m+".json", res.data)
 }
 
 // runMode dispatches a single mode string to the appropriate enumerator.
@@ -311,6 +395,20 @@ func expandModes(m string) []string {
 		return append(sweepAll, attackAll...)
 	}
 	return strings.Split(m, ",")
+}
+
+// domainSIDFromObject extracts the domain SID from an AD object's objectSid
+// by stripping the last RID component (e.g. S-1-5-21-X-Y-Z-500 → S-1-5-21-X-Y-Z).
+func domainSIDFromObject(obj adws.ADObject) string {
+	sid := enum.SIDStr(obj, "objectSid")
+	if sid == "" {
+		return ""
+	}
+	idx := strings.LastIndex(sid, "-")
+	if idx < 0 {
+		return sid
+	}
+	return sid[:idx]
 }
 
 func domainToBaseDN(domain string) string {
