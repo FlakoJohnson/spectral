@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-const base = "vendor/github.com/!macmod/go-adws/transport/"
+const base = "vendor/github.com/Macmod/go-adws/transport/"
 
 func main() {
 	patchResolver()
