@@ -36,25 +36,23 @@ type ADObject = sopa.ADWSItem
 
 // NewClient initialises a client from Config.
 func NewClient(cfg Config) (*Client, error) {
-	useKerb := "false"
-	if cfg.Kerberos || cfg.CCache != "" {
-		useKerb = "true"
-	}
-
-	if cfg.Port == "" {
-		cfg.Port = "9389"
+	port := 9389
+	if cfg.Port != "" {
+		if p, err := fmt.Sscanf(cfg.Port, "%d", &port); p == 0 || err != nil {
+			port = 9389
+		}
 	}
 
 	inner, err := sopa.NewWSClient(sopa.Config{
 		DCAddr:      cfg.Target,
-		Port:        cfg.Port,
+		Port:        port,
 		Domain:      cfg.Domain,
 		Username:    cfg.Username,
 		Password:    cfg.Password,
 		NTHash:      cfg.NTHash,
 		CCachePath:  cfg.CCache,
-		UseKerberos: useKerb,
-		DebugXML:    fmt.Sprintf("%v", cfg.DebugXML),
+		UseKerberos: cfg.Kerberos || cfg.CCache != "",
+		DebugXML:    cfg.DebugXML,
 	})
 	if err != nil {
 		return nil, err
