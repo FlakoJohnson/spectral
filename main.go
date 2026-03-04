@@ -176,7 +176,7 @@ func main() {
 
 	// ── Single object lookup ────────────────────────────────────────────
 	if *targetObj != "" {
-		runLookup(e, w, *targetObj)
+		runLookup(e, w, *targetObj, coll)
 	}
 
 	// ── Mode-based enumeration ──────────────────────────────────────────
@@ -335,7 +335,8 @@ func runMode(e *enum.Enumerator, w *output.Writer, m string, staleDays int) {
 }
 
 // runLookup handles -T type:name lookups.
-func runLookup(e *enum.Enumerator, w *output.Writer, spec string) {
+// coll is updated with domainSID if it can be derived from the result.
+func runLookup(e *enum.Enumerator, w *output.Writer, spec string, coll *collector) {
 	parts := strings.SplitN(spec, ":", 2)
 	if len(parts) != 2 {
 		log.Fatalf("[-] -T format: <type>:<name>  e.g. user:jdoe")
@@ -350,16 +351,34 @@ func runLookup(e *enum.Enumerator, w *output.Writer, spec string) {
 
 	switch kind {
 	case "user":
-		data, err = e.LookupUser(name)
+		result, gerr := e.LookupUser(name)
+		data, err = result, gerr
+		if gerr == nil && coll.domainSID == "" {
+			coll.domainSID = domainSIDFromObject(result.Object)
+		}
 		file = "lookup-user-" + sanitise(name) + ".json"
 	case "computer":
-		data, err = e.LookupComputer(name)
+		result, gerr := e.LookupComputer(name)
+		data, err = result, gerr
+		if gerr == nil && coll.domainSID == "" {
+			coll.domainSID = domainSIDFromObject(result.Object)
+		}
 		file = "lookup-computer-" + sanitise(name) + ".json"
 	case "group":
 		result, gerr := e.LookupGroup(name)
 		data, err = result, gerr
 		if gerr == nil {
 			output.PrintGroupMembers(result)
+			if coll.domainSID == "" {
+				// Try the group object itself first, then fall back to members.
+				coll.domainSID = domainSIDFromObject(result.Object)
+				for _, m := range result.GroupMember {
+					if coll.domainSID != "" {
+						break
+					}
+					coll.domainSID = domainSIDFromObject(m)
+				}
+			}
 		}
 		file = "lookup-group-" + sanitise(name) + ".json"
 	case "ou":
@@ -399,6 +418,7 @@ func expandModes(m string) []string {
 
 // domainSIDFromObject extracts the domain SID from an AD object's objectSid
 // by stripping the last RID component (e.g. S-1-5-21-X-Y-Z-500 → S-1-5-21-X-Y-Z).
+// Returns "" for built-in accounts (S-1-5-32-...) that don't carry a domain SID.
 func domainSIDFromObject(obj adws.ADObject) string {
 	sid := enum.SIDStr(obj, "objectSid")
 	if sid == "" {
@@ -408,7 +428,12 @@ func domainSIDFromObject(obj adws.ADObject) string {
 	if idx < 0 {
 		return sid
 	}
-	return sid[:idx]
+	domain := sid[:idx]
+	// Only accept proper domain SIDs (S-1-5-21-...), not built-in (S-1-5-32-...).
+	if !strings.HasPrefix(domain, "S-1-5-21-") {
+		return ""
+	}
+	return domain
 }
 
 func domainToBaseDN(domain string) string {
