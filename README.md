@@ -29,7 +29,7 @@ Usage: spectral [options]
 
 Connection:
   -t  string   Target DC address (IP or hostname)
-  -d  string   Domain (e.g. corp.local)
+  -d  string   Domain FQDN (e.g. corp.local — NOT the NetBIOS short name)
   -u  string   Username
   -p  string   Password
   -H  string   NT hash (pass-the-hash)
