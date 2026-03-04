@@ -117,7 +117,7 @@ func main() {
 	// If nothing left to do, exit.
 	if len(modes) == 0 && *targetObj == "" {
 		if !*quiet {
-			log.Printf("[+] Done → %s", *outDir)
+			log.Printf("[+] Done. Output saved to: %s", *outDir)
 		}
 		return
 	}
@@ -183,7 +183,7 @@ func main() {
 	}
 
 	if !*quiet {
-		log.Printf("[+] Done → %s", *outDir)
+		log.Printf("[+] Done. Output saved to: %s", *outDir)
 	}
 }
 
