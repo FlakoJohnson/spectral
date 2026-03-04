@@ -53,6 +53,10 @@ Output & pacing:
   -q           Quiet
   -x           Debug SOAP XML
   -bh          Also write BloodHound CE zip (users/computers/groups/gpos/trusts)
+
+Proxy:
+  -proxy string  SOCKS5 proxy URL  (e.g. socks5://127.0.0.1:1080)
+               Also reads ALL_PROXY / SOCKS5_PROXY env vars if flag is omitted.
 `, os.Args[0])
 }
 
@@ -78,10 +82,21 @@ func main() {
 		quiet     = flag.Bool("q", false, "")
 		debugXML  = flag.Bool("x", false, "")
 		bhOut     = flag.Bool("bh", false, "")
+		proxyURL  = flag.String("proxy", "", "")
 	)
 
 	flag.Usage = usage
 	flag.Parse()
+
+	// Fall back to standard proxy env vars if -proxy not set.
+	if *proxyURL == "" {
+		for _, env := range []string{"SOCKS5_PROXY", "ALL_PROXY", "all_proxy"} {
+			if v := os.Getenv(env); v != "" {
+				*proxyURL = v
+				break
+			}
+		}
+	}
 
 	output.PrintBanner()
 
@@ -106,7 +121,7 @@ func main() {
 		if !*quiet {
 			log.Printf("[*] Querying rootDSE on %s:%s (no credentials)", *target, *ldapPort)
 		}
-		dse, err := recon.QueryRootDSE(*target, *ldapPort)
+		dse, err := recon.QueryRootDSE(*target, *ldapPort, *proxyURL)
 		if err != nil {
 			log.Printf("[-] rootDSE: %v", err)
 		} else {
@@ -145,6 +160,7 @@ func main() {
 		CCache:   *ccache,
 		Kerberos: *useKerb,
 		DebugXML: *debugXML,
+		ProxyURL: *proxyURL,
 	}
 
 	pace := opsec.NewPacer(

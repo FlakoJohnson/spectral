@@ -2,11 +2,14 @@
 package recon
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
+	"net/url"
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
+	"golang.org/x/net/proxy"
 )
 
 // RootDSE holds the parsed attributes from an anonymous rootDSE query.
@@ -44,19 +47,27 @@ var rootDSEAttrs = []string{
 	"highestCommittedUSN",
 }
 
+// dialTimeout is the per-attempt TCP connect timeout.
+const dialTimeout = 4 * time.Second
+
 // QueryRootDSE performs an anonymous LDAP query against the rootDSE.
 // No credentials required — readable by default on all AD DCs.
-func QueryRootDSE(target, port string) (*RootDSE, error) {
+// proxyURL, if non-empty, routes the TCP connection through a SOCKS5 proxy
+// (e.g. "socks5://127.0.0.1:1080"). When proxyURL is empty the system
+// resolver is used and port 389 falls back to LDAPS/636 on failure.
+func QueryRootDSE(target, port, proxyURL string) (*RootDSE, error) {
 	if port == "" {
 		port = "389"
 	}
 
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	conn, err := ldap.DialURL(
-		fmt.Sprintf("ldap://%s:%s", target, port),
-		ldap.DialWithDialer(dialer),
-	)
-	if err != nil {
+	conn, err := dialLDAP(target, port, proxyURL)
+	if err != nil && port == "389" {
+		// Port 389 may be blocked — try LDAPS on 636 as fallback.
+		conn, err = dialLDAPS(target, "636", proxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("port 389 and LDAPS 636 both unreachable on %s", target)
+		}
+	} else if err != nil {
 		return nil, fmt.Errorf("dial %s:%s: %w", target, port, err)
 	}
 	defer conn.Close()
@@ -124,6 +135,67 @@ func QueryRootDSE(target, port string) (*RootDSE, error) {
 	}
 
 	return dse, nil
+}
+
+// dialLDAP opens a plain LDAP connection, optionally via a SOCKS5 proxy.
+func dialLDAP(target, port, proxyURL string) (*ldap.Conn, error) {
+	if proxyURL != "" {
+		return dialViaProxy(target, port, proxyURL, false)
+	}
+	d := &net.Dialer{Timeout: dialTimeout}
+	return ldap.DialURL(
+		fmt.Sprintf("ldap://%s:%s", target, port),
+		ldap.DialWithDialer(d),
+	)
+}
+
+// dialLDAPS opens an LDAPS connection, optionally via a SOCKS5 proxy.
+// InsecureSkipVerify is acceptable here because rootDSE is anonymous and read-only.
+func dialLDAPS(target, port, proxyURL string) (*ldap.Conn, error) {
+	if proxyURL != "" {
+		return dialViaProxy(target, port, proxyURL, true)
+	}
+	d := &net.Dialer{Timeout: dialTimeout}
+	return ldap.DialURL(
+		fmt.Sprintf("ldaps://%s:%s", target, port),
+		ldap.DialWithDialer(d),
+		ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}), //nolint:gosec
+	)
+}
+
+// dialViaProxy creates a TCP connection through a SOCKS5 proxy, then wraps it
+// with optional TLS and hands it to the LDAP library via ldap.NewConn.
+func dialViaProxy(target, port, proxyURL string, useTLS bool) (*ldap.Conn, error) {
+	u, err := url.Parse(proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("proxy URL: %w", err)
+	}
+	d, err := proxy.FromURL(u, proxy.Direct)
+	if err != nil {
+		return nil, fmt.Errorf("proxy dialer: %w", err)
+	}
+
+	addr := target + ":" + port
+	conn, err := d.Dial("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("proxy dial %s: %w", addr, err)
+	}
+
+	if useTLS {
+		tlsCfg := &tls.Config{InsecureSkipVerify: true, ServerName: target} //nolint:gosec
+		tlsConn := tls.Client(conn, tlsCfg)
+		if err := tlsConn.Handshake(); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("TLS handshake via proxy: %w", err)
+		}
+		l := ldap.NewConn(tlsConn, true)
+		l.Start()
+		return l, nil
+	}
+
+	l := ldap.NewConn(conn, false)
+	l.Start()
+	return l, nil
 }
 
 // functionalityLabel maps AD functional level integers to readable strings.

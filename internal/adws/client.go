@@ -2,9 +2,14 @@
 package adws
 
 import (
+	"context"
 	"fmt"
+	"net"
+	"net/url"
 
 	sopa "github.com/Macmod/sopa"
+	sopatransport "github.com/Macmod/go-adws/transport"
+	"golang.org/x/net/proxy"
 )
 
 const (
@@ -24,6 +29,9 @@ type Config struct {
 	CCache   string
 	Kerberos bool
 	DebugXML bool
+	// ProxyURL routes all ADWS TCP traffic through a SOCKS5 proxy.
+	// Format: "socks5://host:port"  (e.g. "socks5://127.0.0.1:1080")
+	ProxyURL string
 }
 
 // Client wraps sopa.WSClient.
@@ -43,6 +51,22 @@ func NewClient(cfg Config) (*Client, error) {
 		}
 	}
 
+	// Build SOCKS5 dialer if a proxy URL is provided.
+	var dialFn func(ctx context.Context, network, addr string) (net.Conn, error)
+	if cfg.ProxyURL != "" {
+		u, err := url.Parse(cfg.ProxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("proxy URL: %w", err)
+		}
+		d, err := proxy.FromURL(u, proxy.Direct)
+		if err != nil {
+			return nil, fmt.Errorf("proxy dialer: %w", err)
+		}
+		dialFn = func(_ context.Context, network, addr string) (net.Conn, error) {
+			return d.Dial(network, addr)
+		}
+	}
+
 	inner, err := sopa.NewWSClient(sopa.Config{
 		DCAddr:      cfg.Target,
 		Port:        port,
@@ -53,6 +77,9 @@ func NewClient(cfg Config) (*Client, error) {
 		CCachePath:  cfg.CCache,
 		UseKerberos: cfg.Kerberos || cfg.CCache != "",
 		DebugXML:    cfg.DebugXML,
+		ResolverOptions: sopatransport.ResolverOptions{
+			DialContext: dialFn, // nil = use default net.Dialer
+		},
 	})
 	if err != nil {
 		return nil, err
