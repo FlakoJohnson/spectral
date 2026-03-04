@@ -69,7 +69,7 @@ func main() {
 		mode      = flag.String("m", "", "")
 		targetObj = flag.String("T", "", "")
 		staleDays = flag.Int("A", 90, "")
-		outDir    = flag.String("o", ".", "")
+		outDir    = flag.String("o", "spectral_output", "")
 		jitterMs  = flag.Int("j", 500, "")
 		pauseMs   = flag.Int("P", 2000, "")
 		batch     = flag.Int("B", 100, "")

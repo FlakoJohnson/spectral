@@ -58,7 +58,7 @@ Enumeration:
   -b  string   Base DN (auto-derived from -d if omitted)
 
 Output & pacing:
-  -o  string   Output directory (default: .)
+  -o  string   Output directory (default: ./spectral_output, created if missing)
   -j  int      Jitter between requests in ms (default: 500)
   -P  int      Pause between object types in ms (default: 2000)
   -B  int      Batch size per ADWS pull (default: 100)
