@@ -24,7 +24,7 @@ func main() {
 func patchResolver() {
 	path := base + "resolver.go"
 	data := must(os.ReadFile(path))
-	src := string(data)
+	src := strings.ReplaceAll(string(data), "\r\n", "\n")
 
 	// 1. Add DialContext field to ResolverOptions struct.
 	const oldStruct = `	// When NameServer is empty and UseTCP is true, the system-selected server
@@ -62,7 +62,7 @@ func patchResolver() {
 func patchNNS() {
 	path := base + "nns.go"
 	data := must(os.ReadFile(path))
-	src := string(data)
+	src := strings.ReplaceAll(string(data), "\r\n", "\n")
 
 	// Update kdcDialer.Dial to use DialContext when set.
 	const oldDial = `func (d kdcDialer) Dial(network, address string) (net.Conn, error) {
