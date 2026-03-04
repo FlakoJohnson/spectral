@@ -234,6 +234,7 @@ func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays in
 			if len(data) > 0 && coll.domainSID == "" {
 				coll.domainSID = domainSIDFromObject(data[0])
 			}
+			output.PrintUsers(data)
 		}
 	case "computers":
 		data, err := e.Computers()
@@ -246,6 +247,7 @@ func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays in
 		res.data, res.err = data, err
 		if err == nil {
 			coll.groups = data
+			output.PrintGroups(data)
 		}
 	case "gpos":
 		data, err := e.GPOs()

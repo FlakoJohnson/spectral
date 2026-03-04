@@ -2,8 +2,10 @@ package output
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
+	"spectral/internal/adws"
 	"spectral/internal/enum"
 	"spectral/internal/recon"
 )
@@ -88,6 +90,114 @@ func PrintADCS(r *enum.ADCSResult) {
 		}
 	}
 
+	fmt.Println()
+}
+
+// PrintUsers prints a summary table of all user objects to stdout.
+func PrintUsers(users []adws.ADObject) {
+	fmt.Println()
+	header(fmt.Sprintf("Users  (%d)", len(users)))
+
+	if len(users) == 0 {
+		fmt.Printf("  %sNo users found.%s\n\n", grey, reset)
+		return
+	}
+
+	const (
+		wSAM = 28
+		wSID = 48
+		wSts = 8
+		wAdm = 5
+	)
+
+	fmt.Printf("  %s%-*s  %-*s  %-*s  %-*s  %s%s\n",
+		bold+white,
+		wSAM, "sAMAccountName",
+		wSID, "objectSid",
+		wSts, "Status",
+		wAdm, "Admin",
+		"distinguishedName",
+		reset,
+	)
+	fmt.Printf("  %s%s%s\n", grey, strings.Repeat("─", wSAM+2+wSID+2+wSts+2+wAdm+2+60), reset)
+
+	for _, u := range users {
+		sam := enum.AttrStr(u, "sAMAccountName")
+		sid := enum.SIDStr(u, "objectSid")
+		dn := enum.AttrStr(u, "distinguishedName")
+
+		disabled := false
+		if uac, err := strconv.Atoi(enum.AttrStr(u, "userAccountControl")); err == nil {
+			disabled = uac&0x2 != 0
+		}
+
+		// Pre-pad then colourize so ANSI codes don't break column alignment.
+		stsPlain, stsColour := "enabled", green
+		if disabled {
+			stsPlain, stsColour = "disabled", grey
+		}
+		stsStr := stsColour + fmt.Sprintf("%-*s", wSts, stsPlain) + reset
+
+		admStr := fmt.Sprintf("%-*s", wAdm, "")
+		if enum.AttrStr(u, "adminCount") == "1" {
+			admStr = red + bold + fmt.Sprintf("%-*s", wAdm, "1") + reset
+		}
+
+		fmt.Printf("  %-*s  %-*s  %s  %s  %s%s%s\n",
+			wSAM, sam,
+			wSID, sid,
+			stsStr,
+			admStr,
+			grey, dn, reset,
+		)
+	}
+	fmt.Println()
+}
+
+// PrintGroups prints a summary table of all group objects to stdout.
+func PrintGroups(groups []adws.ADObject) {
+	fmt.Println()
+	header(fmt.Sprintf("Groups  (%d)", len(groups)))
+
+	if len(groups) == 0 {
+		fmt.Printf("  %sNo groups found.%s\n\n", grey, reset)
+		return
+	}
+
+	const (
+		wSAM = 30
+		wSID = 50
+		wMem = 7
+	)
+
+	fmt.Printf("  %s%-*s  %-*s  %-*s  %s%s\n",
+		bold+white,
+		wSAM, "sAMAccountName",
+		wSID, "objectSid",
+		wMem, "Members",
+		"distinguishedName",
+		reset,
+	)
+	fmt.Printf("  %s%s%s\n", grey, strings.Repeat("─", wSAM+2+wSID+2+wMem+2+60), reset)
+
+	for _, g := range groups {
+		sam := enum.AttrStr(g, "sAMAccountName")
+		sid := enum.SIDStr(g, "objectSid")
+		dn := enum.AttrStr(g, "distinguishedName")
+
+		memCount := len(enum.AttrSliceStr(g, "member"))
+		memStr := ""
+		if memCount > 0 {
+			memStr = strconv.Itoa(memCount)
+		}
+
+		fmt.Printf("  %-*s  %-*s  %-*s  %s%s%s\n",
+			wSAM, sam,
+			wSID, sid,
+			wMem, memStr,
+			grey, dn, reset,
+		)
+	}
 	fmt.Println()
 }
 
