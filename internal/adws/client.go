@@ -93,7 +93,9 @@ func (c *Client) QueryBatched(
 	errCh := make(chan error, 1)
 
 	go func() {
-		errCh <- c.inner.QueryWithBatchChannel(baseDN, filter, attrs, scope, batchSize, ch)
+		err := c.inner.QueryWithBatchChannel(baseDN, filter, attrs, scope, batchSize, ch)
+		close(ch)
+		errCh <- err
 	}()
 
 	for batch := range ch {
