@@ -91,6 +91,57 @@ func PrintADCS(r *enum.ADCSResult) {
 	fmt.Println()
 }
 
+// PrintGroupMembers prints a group's members as a formatted table to stdout.
+func PrintGroupMembers(result *enum.SingleResult) {
+	groupName := enum.AttrStr(result.Object, "sAMAccountName")
+	groupSID := enum.AttrStr(result.Object, "objectSid")
+
+	fmt.Println()
+	header(fmt.Sprintf("Group: %s", groupName))
+
+	if groupSID != "" {
+		fmt.Printf("  %sSID:%s %s\n\n", grey, reset, groupSID)
+	}
+
+	if len(result.GroupMember) == 0 {
+		fmt.Printf("  %sNo members found.%s\n\n", grey, reset)
+		return
+	}
+
+	fmt.Printf("  %s%d member(s)%s\n\n", bold, len(result.GroupMember), reset)
+
+	// Column widths.
+	const (
+		wSAM = 30
+		wSID = 50
+	)
+
+	// Header row.
+	fmt.Printf("  %s%-*s  %-*s  %s%s\n",
+		bold+white,
+		wSAM, "sAMAccountName",
+		wSID, "objectSid",
+		"distinguishedName",
+		reset,
+	)
+	fmt.Printf("  %s%s%s\n", grey,
+		strings.Repeat("─", wSAM+2+wSID+2+60), reset)
+
+	// Member rows.
+	for _, m := range result.GroupMember {
+		sam := enum.AttrStr(m, "sAMAccountName")
+		sid := enum.AttrStr(m, "objectSid")
+		dn := enum.AttrStr(m, "distinguishedName")
+
+		fmt.Printf("  %-*s  %-*s  %s%s%s\n",
+			wSAM, sam,
+			wSID, sid,
+			grey, dn, reset,
+		)
+	}
+	fmt.Println()
+}
+
 // PrintRootDSE writes a formatted rootDSE report to stdout.
 func PrintRootDSE(dse *recon.RootDSE) {
 	fmt.Println()

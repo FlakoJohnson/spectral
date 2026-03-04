@@ -272,7 +272,11 @@ func runLookup(e *enum.Enumerator, w *output.Writer, spec string) {
 		data, err = e.LookupComputer(name)
 		file = "lookup-computer-" + sanitise(name) + ".json"
 	case "group":
-		data, err = e.LookupGroup(name)
+		result, gerr := e.LookupGroup(name)
+		data, err = result, gerr
+		if gerr == nil {
+			output.PrintGroupMembers(result)
+		}
 		file = "lookup-group-" + sanitise(name) + ".json"
 	case "ou":
 		data, err = e.LookupOU(name)
