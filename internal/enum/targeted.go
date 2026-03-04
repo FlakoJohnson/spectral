@@ -6,6 +6,7 @@ package enum
 // admin tooling (RSAT / PowerShell AD module patterns).
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log"
 	"time"
@@ -422,14 +423,24 @@ func AttrStr(obj adws.ADObject, name string) string {
 func attrStr(obj adws.ADObject, name string) string { return AttrStr(obj, name) }
 
 // SIDStr returns the human-readable S-1-5-... SID for a given attribute.
-// Falls back to the raw string value if no bytes are available.
+// ADWS returns binary attributes as base64-encoded strings in Value when
+// RawValue is not populated — so we try both.
 func SIDStr(obj adws.ADObject, name string) string {
 	vals, ok := obj.Attributes[name]
 	if !ok || len(vals) == 0 {
 		return ""
 	}
-	if len(vals[0].RawValue) > 0 {
-		return adws.ConvertSID(vals[0].RawValue)
+
+	raw := vals[0].RawValue
+	if len(raw) == 0 && vals[0].Value != "" {
+		decoded, err := base64.StdEncoding.DecodeString(vals[0].Value)
+		if err == nil {
+			raw = decoded
+		}
+	}
+
+	if len(raw) > 0 {
+		return adws.ConvertSID(raw)
 	}
 	return vals[0].Value
 }
