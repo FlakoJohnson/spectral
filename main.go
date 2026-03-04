@@ -207,6 +207,9 @@ func runMode(e *enum.Enumerator, w *output.Writer, m string, staleDays int) {
 	case "fgpp":
 		res.data, res.err = e.FineGrainedPasswordPolicies()
 
+	case "adcs":
+		res.data, res.err = e.ADCS()
+
 	default:
 		log.Printf("[-] Unknown mode: %s", m)
 		return
@@ -263,7 +266,7 @@ func expandModes(m string) []string {
 	sweepAll := []string{"domain", "users", "computers", "groups", "gpos", "trusts"}
 	attackAll := []string{
 		"kerberoastable", "asreproast", "unconstrained", "constrained",
-		"rbcd", "admincount", "shadowcreds", "laps", "pwdnoexpire", "fgpp",
+		"rbcd", "admincount", "shadowcreds", "laps", "pwdnoexpire", "fgpp", "adcs",
 	}
 
 	switch m {

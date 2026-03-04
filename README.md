@@ -42,7 +42,7 @@ Enumeration:
                Sweep:    users, computers, groups, gpos, trusts, domain
                Targeted: kerberoastable, asreproast, unconstrained,
                          constrained, rbcd, admincount, shadowcreds,
-                         laps, pwdnoexpire, stale, fgpp
+                         laps, pwdnoexpire, stale, fgpp, adcs
                Shorthand: all (sweep), attack (targeted), everything (both)
 
   -T  string   Single object lookup: <type>:<name>
@@ -114,6 +114,7 @@ proxychains4 -q ./spectral -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> \
 | `pwdnoexpire` | Enabled users with DONT\_EXPIRE\_PASSWORD | `(userAccountControl:1.2.840.113556.1.4.803:=65536)` |
 | `stale` | Enabled users inactive for N days | `(lastLogonTimestamp<=<filetime>)` |
 | `fgpp` | Fine-grained password policies (PSOs) | `(objectClass=msDS-PasswordSettings)` |
+| `adcs` | AD CS — enterprise CAs, templates, ESC1/2/3/4/6/7/9/15 findings | `(objectClass=pKIcertificateTemplate)` + `(objectClass=pKIEnrollmentService)` |
 
 ## OPSEC notes
 
