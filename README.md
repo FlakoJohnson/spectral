@@ -38,7 +38,8 @@ Connection:
   -r  string   Port (default: 9389)
 
 Enumeration:
-  -m  string   Sweep modes, comma-separated (default: all)
+  -m  string   Modes, comma-separated
+               Unauthenticated: rootdse
                Sweep:    users, computers, groups, gpos, trusts, domain
                Targeted: kerberoastable, asreproast, unconstrained,
                          constrained, rbcd, admincount, shadowcreds,

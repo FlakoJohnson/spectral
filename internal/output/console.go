@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"spectral/internal/enum"
+	"spectral/internal/recon"
 )
 
 // ANSI colour codes.
@@ -87,6 +88,52 @@ func PrintADCS(r *enum.ADCSResult) {
 		}
 	}
 
+	fmt.Println()
+}
+
+// PrintRootDSE writes a formatted rootDSE report to stdout.
+func PrintRootDSE(dse *recon.RootDSE) {
+	fmt.Println()
+	header("RootDSE  —  Anonymous LDAP Probe")
+
+	row := func(label, value string) {
+		if value != "" {
+			fmt.Printf("  %-30s %s%s%s\n", label, bold, value, reset)
+		}
+	}
+
+	section("Domain")
+	row("Default Naming Context", dse.DefaultNamingContext)
+	row("Root Domain NC", dse.RootDomainNC)
+	row("DNS Host Name", dse.DNSHostName)
+	row("Server Name", dse.ServerName)
+	fmt.Println()
+
+	section("Functional Levels")
+	row("Domain Functionality", dse.DomainFunctionality)
+	row("Forest Functionality", dse.ForestFunctionality)
+	row("DC Functionality", dse.DCFunctionality)
+	fmt.Println()
+
+	section("Naming Contexts")
+	row("Configuration NC", dse.ConfigurationNC)
+	row("Schema NC", dse.SchemaNamingContext)
+	fmt.Println()
+
+	section("Authentication")
+	if len(dse.SupportedSASL) > 0 {
+		fmt.Printf("  %-30s %s%s%s\n", "Supported SASL",
+			bold, strings.Join(dse.SupportedSASL, ", "), reset)
+	}
+	if len(dse.SupportedLDAPVersions) > 0 {
+		fmt.Printf("  %-30s %s%s%s\n", "LDAP Versions",
+			bold, strings.Join(dse.SupportedLDAPVersions, ", "), reset)
+	}
+	fmt.Println()
+
+	section("Misc")
+	row("Current Time (UTC)", dse.CurrentTime)
+	row("Highest Committed USN", dse.HighestCommittedUSN)
 	fmt.Println()
 }
 

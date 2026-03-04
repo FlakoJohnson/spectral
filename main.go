@@ -12,36 +12,35 @@ import (
 	"spectral/internal/enum"
 	"spectral/internal/opsec"
 	"spectral/internal/output"
+	"spectral/internal/recon"
 )
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `Usage: %s [options]
 
 Connection:
-  -t  string   Target DC address (IP or hostname)
-  -d  string   Domain (e.g. corp.local)
+  -t  string   Target DC address (IP or hostname)  [required]
+  -d  string   Domain FQDN (e.g. corp.local — NOT the NetBIOS short name)
   -u  string   Username
   -p  string   Password
   -H  string   NT hash (pass-the-hash)
   -k           Use Kerberos (reads KRB5CCNAME env or -c path)
   -c  string   Kerberos ccache path
-  -r  string   Port (default: 9389)
+  -r  string   ADWS port (default: 9389)
+  -l  string   LDAP port for rootdse (default: 389)
 
 Enumeration:
-  -m  string   Sweep modes, comma-separated (default: all)
-               Sweep: users, computers, groups, gpos, trusts, domain
+  -m  string   Modes, comma-separated
+               Unauthenticated: rootdse
+               Sweep:    users, computers, groups, gpos, trusts, domain
                Targeted: kerberoastable, asreproast, unconstrained,
                          constrained, rbcd, admincount, shadowcreds,
-                         laps, pwdnoexpire, stale, fgpp
-               Shorthand: all (all sweep modes), attack (all targeted)
+                         laps, pwdnoexpire, stale, fgpp, adcs
+               Shorthand: all (sweep), attack (targeted), everything (both)
 
   -T  string   Single object lookup: <type>:<name>
                Types: user, computer, group, ou
-               Examples:
-                 -T user:jdoe
-                 -T computer:DC01
-                 -T group:Domain Admins
-                 -T ou:OU=IT,DC=corp,DC=local
+               Examples: -T user:jdoe  -T "group:Domain Admins"
 
   -A  int      Stale threshold in days for -m stale (default: 90)
   -b  string   Base DN (auto-derived from -d if omitted)
@@ -59,6 +58,7 @@ Output & pacing:
 func main() {
 	var (
 		target    = flag.String("t", "", "")
+		ldapPort  = flag.String("l", "389", "")
 		domain    = flag.String("d", "", "")
 		username  = flag.String("u", "", "")
 		password  = flag.String("p", "", "")
@@ -67,7 +67,7 @@ func main() {
 		ccache    = flag.String("c", "", "")
 		baseDN    = flag.String("b", "", "")
 		mode      = flag.String("m", "", "")
-		target1   = flag.String("T", "", "")
+		targetObj = flag.String("T", "", "")
 		staleDays = flag.Int("A", 90, "")
 		outDir    = flag.String("o", ".", "")
 		jitterMs  = flag.Int("j", 500, "")
@@ -83,16 +83,50 @@ func main() {
 
 	output.PrintBanner()
 
-	if *target == "" || *domain == "" {
+	if *target == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
-	if *mode == "" && *target1 == "" {
+	if *mode == "" && *targetObj == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
 
-	// KRB5CCNAME env fallback.
+	if err := os.MkdirAll(*outDir, 0700); err != nil {
+		log.Fatalf("[-] Output dir: %v", err)
+	}
+
+	w := output.NewWriter(*outDir, !*quiet)
+	modes := expandModes(*mode)
+
+	// ── Unauthenticated rootDSE — runs before any ADWS connection ──────
+	if contains(modes, "rootdse") {
+		if !*quiet {
+			log.Printf("[*] Querying rootDSE on %s:%s (no credentials)", *target, *ldapPort)
+		}
+		dse, err := recon.QueryRootDSE(*target, *ldapPort)
+		if err != nil {
+			log.Printf("[-] rootDSE: %v", err)
+		} else {
+			output.PrintRootDSE(dse)
+			w.Write("rootdse.json", dse)
+		}
+		modes = filterOut(modes, "rootdse")
+	}
+
+	// If nothing left to do, exit.
+	if len(modes) == 0 && *targetObj == "" {
+		if !*quiet {
+			log.Printf("[+] Done → %s", *outDir)
+		}
+		return
+	}
+
+	// ── ADWS modes require domain + credentials ─────────────────────────
+	if *domain == "" {
+		log.Fatalf("[-] -d (domain) is required for ADWS enumeration")
+	}
+
 	if *ccache == "" {
 		if v := os.Getenv("KRB5CCNAME"); v != "" {
 			*ccache = v
@@ -133,26 +167,18 @@ func main() {
 		*baseDN = domainToBaseDN(*domain)
 	}
 
-	if err := os.MkdirAll(*outDir, 0700); err != nil {
-		log.Fatalf("[-] Output dir: %v", err)
-	}
-
-	w := output.NewWriter(*outDir, !*quiet)
 	e := enum.New(client, pace, *batch, *baseDN, !*quiet)
 
 	// ── Single object lookup ────────────────────────────────────────────
-	if *target1 != "" {
-		runLookup(e, w, *target1)
+	if *targetObj != "" {
+		runLookup(e, w, *targetObj)
 	}
 
 	// ── Mode-based enumeration ──────────────────────────────────────────
-	if *mode != "" {
-		modes := expandModes(*mode)
-		for i, m := range modes {
-			runMode(e, w, m, *staleDays)
-			if i < len(modes)-1 {
-				pace.BetweenTypes()
-			}
+	for i, m := range modes {
+		runMode(e, w, m, *staleDays)
+		if i < len(modes)-1 {
+			pace.BetweenTypes()
 		}
 	}
 
@@ -171,7 +197,6 @@ func runMode(e *enum.Enumerator, w *output.Writer, m string, staleDays int) {
 	var res result
 
 	switch m {
-	// ── Sweep ──────────────────────────────────────────────────────────
 	case "domain":
 		res.data, res.err = e.Domain()
 	case "users":
@@ -184,8 +209,6 @@ func runMode(e *enum.Enumerator, w *output.Writer, m string, staleDays int) {
 		res.data, res.err = e.GPOs()
 	case "trusts":
 		res.data, res.err = e.Trusts()
-
-	// ── Targeted ───────────────────────────────────────────────────────
 	case "kerberoastable":
 		res.data, res.err = e.Kerberoastable()
 	case "asreproast":
@@ -208,14 +231,12 @@ func runMode(e *enum.Enumerator, w *output.Writer, m string, staleDays int) {
 		res.data, res.err = e.StaleAccounts(staleDays)
 	case "fgpp":
 		res.data, res.err = e.FineGrainedPasswordPolicies()
-
 	case "adcs":
 		adcsResult, adcsErr := e.ADCS()
 		res.data, res.err = adcsResult, adcsErr
 		if adcsErr == nil {
 			output.PrintADCS(adcsResult)
 		}
-
 	default:
 		log.Printf("[-] Unknown mode: %s", m)
 		return
@@ -267,14 +288,16 @@ func runLookup(e *enum.Enumerator, w *output.Writer, spec string) {
 	w.Write(file, data)
 }
 
-// expandModes resolves shorthands and deduplicates.
+// expandModes resolves shorthands.
 func expandModes(m string) []string {
+	if m == "" {
+		return nil
+	}
 	sweepAll := []string{"domain", "users", "computers", "groups", "gpos", "trusts"}
 	attackAll := []string{
 		"kerberoastable", "asreproast", "unconstrained", "constrained",
 		"rbcd", "admincount", "shadowcreds", "laps", "pwdnoexpire", "fgpp", "adcs",
 	}
-
 	switch m {
 	case "all":
 		return sweepAll
@@ -283,7 +306,6 @@ func expandModes(m string) []string {
 	case "everything":
 		return append(sweepAll, attackAll...)
 	}
-
 	return strings.Split(m, ",")
 }
 
@@ -296,7 +318,6 @@ func domainToBaseDN(domain string) string {
 	return strings.Join(dcs, ",")
 }
 
-// sanitise makes a string safe for use as a filename component.
 func sanitise(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
@@ -304,4 +325,23 @@ func sanitise(s string) string {
 		}
 		return '-'
 	}, s)
+}
+
+func contains(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func filterOut(ss []string, exclude string) []string {
+	out := ss[:0]
+	for _, v := range ss {
+		if v != exclude {
+			out = append(out, v)
+		}
+	}
+	return out
 }
