@@ -420,3 +420,16 @@ func AttrStr(obj adws.ADObject, name string) string {
 
 // attrStr is the package-private alias used within the enum package.
 func attrStr(obj adws.ADObject, name string) string { return AttrStr(obj, name) }
+
+// SIDStr returns the human-readable S-1-5-... SID for a given attribute.
+// Falls back to the raw string value if no bytes are available.
+func SIDStr(obj adws.ADObject, name string) string {
+	vals, ok := obj.Attributes[name]
+	if !ok || len(vals) == 0 {
+		return ""
+	}
+	if len(vals[0].RawValue) > 0 {
+		return adws.ConvertSID(vals[0].RawValue)
+	}
+	return vals[0].Value
+}

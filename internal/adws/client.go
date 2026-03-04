@@ -107,6 +107,11 @@ func (c *Client) QueryBatched(
 	return <-errCh
 }
 
+// ConvertSID converts a raw binary SID to S-1-5-21-... string format.
+func ConvertSID(b []byte) string {
+	return sopa.ConvertSIDBytes(b)
+}
+
 // GetDomain returns high-level domain metadata via MS-ADCAP.
 func (c *Client) GetDomain() (*sopa.ADCAPActiveDirectoryDomain, error) {
 	return c.inner.ADCAPGetADDomain()

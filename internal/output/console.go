@@ -94,7 +94,7 @@ func PrintADCS(r *enum.ADCSResult) {
 // PrintGroupMembers prints a group's members as a formatted table to stdout.
 func PrintGroupMembers(result *enum.SingleResult) {
 	groupName := enum.AttrStr(result.Object, "sAMAccountName")
-	groupSID := enum.AttrStr(result.Object, "objectSid")
+	groupSID := enum.SIDStr(result.Object, "objectSid")
 
 	fmt.Println()
 	header(fmt.Sprintf("Group: %s", groupName))
@@ -130,7 +130,7 @@ func PrintGroupMembers(result *enum.SingleResult) {
 	// Member rows.
 	for _, m := range result.GroupMember {
 		sam := enum.AttrStr(m, "sAMAccountName")
-		sid := enum.AttrStr(m, "objectSid")
+		sid := enum.SIDStr(m, "objectSid")
 		dn := enum.AttrStr(m, "distinguishedName")
 
 		fmt.Printf("  %-*s  %-*s  %s%s%s\n",
