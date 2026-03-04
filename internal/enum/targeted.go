@@ -409,11 +409,11 @@ func dedupe(items []adws.ADObject) []adws.ADObject {
 }
 
 // attrStr extracts the first string value of an attribute from an ADObject.
+// Attributes is map[string][]ADWSValue — key is the attribute name.
 func attrStr(obj adws.ADObject, name string) string {
-	for _, attr := range obj.Attributes {
-		if attr.Name == name && len(attr.Values) > 0 {
-			return attr.Values[0]
-		}
+	vals, ok := obj.Attributes[name]
+	if !ok || len(vals) == 0 {
+		return ""
 	}
-	return ""
+	return vals[0].Value
 }
