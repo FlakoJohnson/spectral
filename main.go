@@ -208,7 +208,11 @@ func runMode(e *enum.Enumerator, w *output.Writer, m string, staleDays int) {
 		res.data, res.err = e.FineGrainedPasswordPolicies()
 
 	case "adcs":
-		res.data, res.err = e.ADCS()
+		adcsResult, adcsErr := e.ADCS()
+		res.data, res.err = adcsResult, adcsErr
+		if adcsErr == nil {
+			output.PrintADCS(adcsResult)
+		}
 
 	default:
 		log.Printf("[-] Unknown mode: %s", m)

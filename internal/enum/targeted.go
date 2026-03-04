@@ -408,12 +408,15 @@ func dedupe(items []adws.ADObject) []adws.ADObject {
 	return out
 }
 
-// attrStr extracts the first string value of an attribute from an ADObject.
+// AttrStr extracts the first string value of an attribute from an ADObject.
 // Attributes is map[string][]ADWSValue — key is the attribute name.
-func attrStr(obj adws.ADObject, name string) string {
+func AttrStr(obj adws.ADObject, name string) string {
 	vals, ok := obj.Attributes[name]
 	if !ok || len(vals) == 0 {
 		return ""
 	}
 	return vals[0].Value
 }
+
+// attrStr is the package-private alias used within the enum package.
+func attrStr(obj adws.ADObject, name string) string { return AttrStr(obj, name) }
