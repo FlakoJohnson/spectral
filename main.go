@@ -81,6 +81,8 @@ func main() {
 	flag.Usage = usage
 	flag.Parse()
 
+	output.PrintBanner()
+
 	if *target == "" || *domain == "" {
 		flag.Usage()
 		os.Exit(1)
