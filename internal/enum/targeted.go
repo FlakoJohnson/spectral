@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"spectral/internal/adws"
@@ -37,58 +38,75 @@ func notDisabled() string { return fmt.Sprintf("(!%s)", uacFilter(uacDisabled)) 
 // Kerberoastable
 // -------------------------------------------------------------------------
 
-// kerberoastableAttrs are the only fields needed for a Kerberoasting target list.
-var kerberoastableAttrs = []string{
-	"sAMAccountName",
-	"distinguishedName",
-	"servicePrincipalName",
-	"adminCount",
-	"userAccountControl",
-	"pwdLastSet",
-	"lastLogon",
-	"memberOf",
-}
-
 // Kerberoastable returns enabled user accounts that have at least one SPN
 // (excluding krbtgt and machine accounts ending in $).
 //
-// OPSEC: This filter mirrors the query issued by PowerShell's
-// Get-ADUser -Filter {ServicePrincipalName -ne "$null"} pattern.
+// OPSEC: Uses the same filter and attribute set as a normal user sweep
+// ((&(objectCategory=person)(objectClass=user))) and filters client-side.
+// This is indistinguishable from -m users in ADWS logs / MDI telemetry.
+// A targeted (servicePrincipalName=*) filter is logged verbatim by MDI
+// and triggers "Possible SPN enumeration via ADWS".
 func (e *Enumerator) Kerberoastable() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Kerberoastable users")
+		log.Printf("[*] Kerberoastable users (via full user sweep, filtered client-side)")
 	}
 
-	filter := fmt.Sprintf("(&(objectClass=user)(servicePrincipalName=*)"+
-		"(!(sAMAccountName=krbtgt))(!(sAMAccountName=*$))%s)",
-		notDisabled())
+	all, err := e.runTargeted(userFilter, userAttrs, "kerberoastable")
+	if err != nil {
+		return nil, err
+	}
 
-	return e.runTargeted(filter, kerberoastableAttrs, "kerberoastable")
+	var out []adws.ADObject
+	for _, obj := range all {
+		sam := attrStr(obj, "sAMAccountName")
+		// Skip krbtgt and machine accounts.
+		if sam == "krbtgt" || strings.HasSuffix(sam, "$") {
+			continue
+		}
+		// Skip disabled accounts.
+		uac := parseInt(attrStr(obj, "userAccountControl"))
+		if uac&uacDisabled != 0 {
+			continue
+		}
+		// Keep only objects that actually have SPNs.
+		if len(obj.Attributes["servicePrincipalName"]) == 0 {
+			continue
+		}
+		out = append(out, obj)
+	}
+	return out, nil
 }
 
 // -------------------------------------------------------------------------
 // AS-REP Roastable
 // -------------------------------------------------------------------------
 
-var asrepAttrs = []string{
-	"sAMAccountName",
-	"distinguishedName",
-	"userAccountControl",
-	"adminCount",
-	"memberOf",
-	"pwdLastSet",
-}
-
 // ASREPRoastable returns enabled users with DONT_REQUIRE_PREAUTH set.
+//
+// OPSEC: Uses the full user sweep filter and filters client-side on the
+// DONT_REQUIRE_PREAUTH UAC bit. Avoids a fingerprintable UAC bitmask
+// extensible-match filter in the ADWS query log.
 func (e *Enumerator) ASREPRoastable() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] AS-REP roastable users")
+		log.Printf("[*] AS-REP roastable users (via full user sweep, filtered client-side)")
 	}
 
-	filter := fmt.Sprintf("(&(objectClass=user)%s%s)",
-		uacFilter(uacDontReqPreauth), notDisabled())
+	all, err := e.runTargeted(userFilter, userAttrs, "asreproastable")
+	if err != nil {
+		return nil, err
+	}
 
-	return e.runTargeted(filter, asrepAttrs, "asreproastable")
+	var out []adws.ADObject
+	for _, obj := range all {
+		uac := parseInt(attrStr(obj, "userAccountControl"))
+		if uac&uacDisabled != 0 {
+			continue
+		}
+		if uac&uacDontReqPreauth != 0 {
+			out = append(out, obj)
+		}
+	}
+	return out, nil
 }
 
 // -------------------------------------------------------------------------
