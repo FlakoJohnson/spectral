@@ -135,17 +135,20 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 	var err error
 
 	// 1. Enterprise CAs (Enrollment Services)
+	// Query from pkiBase with ScopeSubtree rather than from the specific
+	// CN=Enrollment Services container — some DCs return an LDAP referral
+	// when the base DN points deep into the Configuration NC via ADWS.
 	if e.verbose {
 		log.Printf("[*] ADCS: enterprise CAs")
 	}
 	caObjs, err := e.client.Query(
-		"CN=Enrollment Services,"+pkiBase,
+		pkiBase,
 		"(objectClass=pKIEnrollmentService)",
 		caAttrs,
-		adws.ScopeOneLevel,
+		adws.ScopeSubtree,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("adcs CAs: %w", err)
+		log.Printf("[-] adcs: CAs: %v (continuing without CA data)", err)
 	}
 	for _, obj := range caObjs {
 		templates := attrSlice(obj, "certificateTemplates")
@@ -162,10 +165,10 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 		log.Printf("[*] ADCS: certificate templates")
 	}
 	tmplObjs, err := e.client.Query(
-		"CN=Certificate Templates,"+pkiBase,
+		pkiBase,
 		"(objectClass=pKIcertificateTemplate)",
 		templateAttrs,
-		adws.ScopeOneLevel,
+		adws.ScopeSubtree,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("adcs templates: %w", err)
@@ -245,12 +248,15 @@ func analyseESC(r *ADCSResult) []ESCFinding {
 			published[t] = true
 		}
 	}
+	// If CA data wasn't available, analyse all templates and note the caveat.
+	unknownPublish := len(r.CAs) == 0
 
 	for _, t := range r.Templates {
 		name := templateName(t.Object)
 
 		// Only flag templates that are actually published — reduces noise.
-		if !published[name] {
+		// Skip this check when CA data is unavailable.
+		if !unknownPublish && !published[name] {
 			continue
 		}
 
@@ -260,13 +266,17 @@ func analyseESC(r *ADCSResult) []ESCFinding {
 			t.RASignature == 0 &&
 			t.EnrollFlag&ctFlagPendAllRequests == 0 &&
 			hasAuthEKU(t.EKUs) {
-			findings = append(findings, ESCFinding{
+			f := ESCFinding{
 				ESC:         "ESC1",
 				Template:    name,
 				Risk:        "CRITICAL",
 				Description: "Template allows enrollee to supply SAN + has auth EKU + no RA approval. Allows domain privilege escalation by requesting cert as any user.",
 				Note:        "Verify enroll/autoenroll rights on template ACL.",
-			})
+			}
+			if unknownPublish {
+				f.Note += " (CA data unavailable — publish status unknown)"
+			}
+			findings = append(findings, f)
 		}
 
 		// ── ESC2 ─────────────────────────────────────────────────────
