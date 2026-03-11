@@ -48,31 +48,30 @@ func notDisabled() string { return fmt.Sprintf("(!%s)", uacFilter(uacDisabled)) 
 // and triggers "Possible SPN enumeration via ADWS".
 func (e *Enumerator) Kerberoastable() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Kerberoastable users (via full user sweep, filtered client-side)")
+		log.Printf("[*] Kerberoastable users")
 	}
-
-	all, err := e.runTargeted(userFilter, userAttrs, "kerberoastable")
+	all, err := e.allUsers()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("kerberoastable: %w", err)
 	}
 
 	var out []adws.ADObject
 	for _, obj := range all {
 		sam := attrStr(obj, "sAMAccountName")
-		// Skip krbtgt and machine accounts.
 		if sam == "krbtgt" || strings.HasSuffix(sam, "$") {
 			continue
 		}
-		// Skip disabled accounts.
 		uac := parseInt(attrStr(obj, "userAccountControl"))
 		if uac&uacDisabled != 0 {
 			continue
 		}
-		// Keep only objects that actually have SPNs.
 		if len(obj.Attributes["servicePrincipalName"]) == 0 {
 			continue
 		}
 		out = append(out, obj)
+	}
+	if e.verbose {
+		log.Printf("[+] kerberoastable: %d", len(out))
 	}
 	return out, nil
 }
@@ -88,12 +87,11 @@ func (e *Enumerator) Kerberoastable() ([]adws.ADObject, error) {
 // extensible-match filter in the ADWS query log.
 func (e *Enumerator) ASREPRoastable() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] AS-REP roastable users (via full user sweep, filtered client-side)")
+		log.Printf("[*] AS-REP roastable users")
 	}
-
-	all, err := e.runTargeted(userFilter, userAttrs, "asreproastable")
+	all, err := e.allUsers()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("asreproastable: %w", err)
 	}
 
 	var out []adws.ADObject
@@ -105,6 +103,9 @@ func (e *Enumerator) ASREPRoastable() ([]adws.ADObject, error) {
 		if uac&uacDontReqPreauth != 0 {
 			out = append(out, obj)
 		}
+	}
+	if e.verbose {
+		log.Printf("[+] asreproastable: %d", len(out))
 	}
 	return out, nil
 }
@@ -316,11 +317,25 @@ func (e *Enumerator) PasswordNeverExpires() ([]adws.ADObject, error) {
 	if e.verbose {
 		log.Printf("[*] Password-never-expires accounts")
 	}
+	all, err := e.allUsers()
+	if err != nil {
+		return nil, fmt.Errorf("pwd-never-expires: %w", err)
+	}
 
-	filter := fmt.Sprintf("(&(objectCategory=person)(objectClass=user)%s%s)",
-		uacFilter(uacDontExpirePass), notDisabled())
-
-	return e.runTargeted(filter, stalePassAttrs, "pwd-never-expires")
+	var out []adws.ADObject
+	for _, obj := range all {
+		uac := parseInt(attrStr(obj, "userAccountControl"))
+		if uac&uacDisabled != 0 {
+			continue
+		}
+		if uac&uacDontExpirePass != 0 {
+			out = append(out, obj)
+		}
+	}
+	if e.verbose {
+		log.Printf("[+] pwd-never-expires: %d", len(out))
+	}
+	return out, nil
 }
 
 // -------------------------------------------------------------------------
