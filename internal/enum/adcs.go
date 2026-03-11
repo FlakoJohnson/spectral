@@ -148,7 +148,7 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 		adws.ScopeSubtree,
 	)
 	if err != nil {
-		log.Printf("[-] adcs: CAs: %v (continuing without CA data)", err)
+		log.Printf("[*] ADCS: enterprise CAs unavailable")
 	}
 	for _, obj := range caObjs {
 		templates := attrSlice(obj, "certificateTemplates")
@@ -193,7 +193,7 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 		adws.ScopeOneLevel,
 	)
 	if err != nil {
-		log.Printf("[*] ADCS: root CA query failed (non-fatal): %v", err)
+		log.Printf("[*] ADCS: root CAs unavailable")
 	}
 
 	e.pace.BetweenRequests()
@@ -209,7 +209,7 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 		adws.ScopeBase,
 	)
 	if err != nil {
-		log.Printf("[*] ADCS: NTAuth query failed (non-fatal): %v", err)
+		log.Printf("[*] ADCS: NTAuth store unavailable")
 	}
 
 	// 5. Client-side ESC analysis
