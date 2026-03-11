@@ -133,10 +133,10 @@ export ALL_PROXY=socks5://127.0.0.1:1080
 
 ## Targeted modes
 
-| Mode | What it finds | LDAP filter used |
+| Mode | What it finds | Wire filter (ADWS log) |
 |---|---|---|
-| `kerberoastable` | Users with SPNs (excl. krbtgt) | `(&(objectClass=user)(servicePrincipalName=*)(!(sAMAccountName=krbtgt)))` |
-| `asreproast` | DONT\_REQUIRE\_PREAUTH users | `(userAccountControl:1.2.840.113556.1.4.803:=4194304)` |
+| `kerberoastable` | Users with SPNs (excl. krbtgt) | `(&(objectCategory=person)(objectClass=user))` + client-side SPN filter |
+| `asreproast` | DONT\_REQUIRE\_PREAUTH users | `(&(objectCategory=person)(objectClass=user))` + client-side UAC filter |
 | `unconstrained` | Computers/users with unconstrained delegation (non-DCs) | `(userAccountControl:1.2.840.113556.1.4.803:=524288)` |
 | `constrained` | Objects with `msDS-AllowedToDelegateTo` | `(msDS-AllowedToDelegateTo=*)` |
 | `rbcd` | Objects with `msDS-AllowedToActOnBehalfOfOtherIdentity` | `(msDS-AllowedToActOnBehalfOfOtherIdentity=*)` |
@@ -152,20 +152,23 @@ export ALL_PROXY=socks5://127.0.0.1:1080
 
 - Uses `(objectCategory=person)(objectClass=user)` style filters — same as RSAT/PowerShell AD module, not `(!FALSE)`
 - GPOs and trusts are scoped to their containers (`CN=Policies,CN=System` / `CN=System`) rather than a full domain sweep
-- Targeted queries use a single `Query()` call — looks like a one-off admin lookup, not a sweep
+- `kerberoastable` and `asreproast` issue a plain user sweep on the wire and filter client-side — the ADWS log shows `(&(objectCategory=person)(objectClass=user))`, not an SPN/UAC bitmask query. MDI fingerprints `(servicePrincipalName=*)` in the filter as "Possible SPN enumeration via ADWS".
 - Configurable jitter and batch size to control query volume
 - Binary is built with `-s -w -trimpath` to strip symbols and build paths
 - No SDFlags:0x7 pattern (SOAPHound signature)
+- **Use Kerberos (`-k`) when possible.** NTLMv2 from a non-domain-joined IP triggers "Suspicious NTLM authentication" in MDI regardless of query content — MDI flags any ADWS NTLMv2 auth where the source resolves to an unknown machine. Running from a domain-joined foothold with a Kerberos ccache avoids this entirely.
 
 ## Detection
 
-The remaining detection vectors defenders can use:
+Confirmed MDI detections observed in testing:
 
-| Vector | Notes |
-|---|---|
-| Network connection to port 9389 | Any process → DC:9389 is flagged by Splunk/Sigma rules |
-| SACL canary object | Best detection — query a canary object and alert on access |
-| Event ID 1644 | Logs LDAP queries but shows `[::1]` as client; often filtered |
+| Alert | Trigger | Mitigation |
+|---|---|---|
+| Possible SPN enumeration via ADWS | `(servicePrincipalName=*)` in ADWS filter | Fixed — `kerberoastable` now uses a plain user sweep |
+| Suspicious NTLM authentication | NTLMv2 over ADWS from a host MDI doesn't recognise | Use Kerberos (`-k`) from a domain-joined pivot |
+| Network connection to port 9389 | Any process → DC:9389 | Sigma/Splunk rule — no mitigation at the tool level |
+| SACL canary object | Query hits a canary object | Avoid if you know canaries are deployed |
+| Event ID 1644 | LDAP query log on DC | Shows `[::1]` as client; commonly filtered by defenders |
 
 ## Output
 
