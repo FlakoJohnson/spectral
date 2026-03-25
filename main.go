@@ -38,7 +38,11 @@ Enumeration:
                Targeted: kerberoastable, asreproast, unconstrained,
                          constrained, rbcd, admincount, shadowcreds,
                          laps, pwdnoexpire, stale, fgpp, adcs
-               Shorthand: all (sweep), attack (targeted), everything (both)
+
+               Shorthand:
+                 sweep    — all sweep modes (users, computers, groups, gpos, trusts, domain)
+                 targeted — all attack-path modes (kerberoastable, asreproast, delegation, etc.)
+                 full     — sweep + targeted combined
 
   -T  string   Single object lookup: <type>:<name>
                Types: user, computer, group, ou
@@ -472,17 +476,25 @@ func expandModes(m string) []string {
 		return nil
 	}
 	sweepAll := []string{"domain", "users", "computers", "groups", "gpos", "trusts"}
-	attackAll := []string{
+	targetedAll := []string{
 		"kerberoastable", "asreproast", "unconstrained", "constrained",
-		"rbcd", "admincount", "shadowcreds", "laps", "pwdnoexpire", "fgpp", "adcs",
+		"rbcd", "admincount", "shadowcreds", "laps", "pwdnoexpire", "stale", "fgpp", "adcs",
 	}
 	switch m {
+	// Current names
+	case "sweep":
+		return sweepAll
+	case "targeted":
+		return targetedAll
+	case "full":
+		return append(sweepAll, targetedAll...)
+	// Legacy aliases (backward compat)
 	case "all":
 		return sweepAll
 	case "attack":
-		return attackAll
+		return targetedAll
 	case "everything":
-		return append(sweepAll, attackAll...)
+		return append(sweepAll, targetedAll...)
 	}
 	return strings.Split(m, ",")
 }
