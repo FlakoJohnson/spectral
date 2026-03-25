@@ -63,7 +63,10 @@ Enumeration:
                Targeted: kerberoastable, asreproast, unconstrained,
                          constrained, rbcd, admincount, shadowcreds,
                          laps, pwdnoexpire, stale, fgpp, adcs
-               Shorthand: all (sweep), attack (targeted), everything (both)
+               Shorthand:
+                 sweep    — all sweep modes (users, computers, groups, gpos, trusts, domain)
+                 targeted — all attack-path modes (kerberoastable, asreproast, delegation, etc.)
+                 full     — sweep + targeted combined
 
   -T  string   Single object lookup: <type>:<name>
                Types: user, computer, group, ou
@@ -77,13 +80,19 @@ Enumeration:
   -b  string   Base DN (auto-derived from -d if omitted)
 
 Output & pacing:
-  -o  string   Output directory (default: ./spectral_output, created if missing)
+  -o  string   Output directory (default: ./<IP>_<YYYYMMDD>/)
   -j  int      Jitter between requests in ms (default: 500)
   -P  int      Pause between object types in ms (default: 2000)
   -B  int      Batch size per ADWS pull (default: 100)
   -q           Quiet
   -x           Debug SOAP XML
-  -bh          Also write BloodHound CE zip (users/computers/groups/gpos/trusts)
+  -bh          Also write BloodHound CE zip (auto-generated when sweep data is collected)
+
+Stealth:
+  -s           Stealth mode: randomize filters, attrs, batch sizes, query order,
+               suppress banner, obfuscate output filenames. Implies -q.
+  -Bmin int    Minimum batch size for stealth randomization (default: 75)
+  -Bmax int    Maximum batch size for stealth randomization (default: 125)
 
 Proxy:
   -proxy string  SOCKS5 proxy URL (e.g. socks5://127.0.0.1:1080)
@@ -95,14 +104,14 @@ Proxy:
 
 **Full sweep via SOCKS5 proxy (NTLM PtH):**
 ```bash
-./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -m all -o ./out
+./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -m sweep -o ./out
 ```
 
 **Attack-path targets only (Kerberos ccache):**
 ```bash
 export KRB5CCNAME=/tmp/jdoe.ccache
 export ALL_PROXY=socks5://127.0.0.1:1080
-./spectral -t 10.10.10.5 -d corp.local -u jdoe -k -m attack -o ./out
+./spectral -t 10.10.10.5 -d corp.local -u jdoe -k -m targeted -o ./out
 ```
 
 **Single user deep-dive:**
@@ -123,12 +132,12 @@ export ALL_PROXY=socks5://127.0.0.1:1080
 **Slower, quieter run with more jitter:**
 ```bash
 ./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> \
-  -m attack -j 2000 -P 5000 -B 50 -o ./out
+  -m targeted -j 2000 -P 5000 -B 50 -o ./out
 ```
 
 **BloodHound CE output:**
 ```bash
-./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -m all -bh -o ./out
+./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -m sweep -bh -o ./out
 ```
 
 ## Targeted modes
@@ -172,20 +181,23 @@ Confirmed MDI detections observed in testing:
 
 ## Output
 
-Each mode writes a JSON file to the output directory:
+Output is organized for evidence keeping. Directory and filenames include the target IP and date:
 
 ```
-out/
-├── domain.json
-├── users.json
-├── computers.json
-├── groups.json
-├── gpos.json
-├── trusts.json
-├── kerberoastable.json
-├── asreproast.json
+10.10.10.5_20260324/
+├── 10.10.10.5_20260324_domain.json
+├── 10.10.10.5_20260324_users.json
+├── 10.10.10.5_20260324_computers.json
+├── 10.10.10.5_20260324_groups.json
+├── 10.10.10.5_20260324_gpos.json
+├── 10.10.10.5_20260324_trusts.json
+├── 10.10.10.5_20260324_kerberoastable.json
+├── 10.10.10.5_20260324_adcs.json
+├── 10.10.10.5_20260324_bloodhound.zip
 └── ...
 ```
+
+In stealth mode (`-s`), filenames are obfuscated to SHA256 hashes with a `.manifest.json` for decoding.
 
 Each file is wrapped with collection metadata:
 

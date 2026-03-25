@@ -479,14 +479,13 @@ func (c *BHConverter) ConvertTrusts(objects []adws.ADObject) []bhTrust {
 
 // WriteBHZip serialises all collected data as BH CE JSON files inside a zip.
 func WriteBHZip(
-	outDir, domain, domainSID string,
+	outDir, filePrefix, domain, domainSID string,
 	users, computers, groups, gpos, trusts []adws.ADObject,
 ) error {
 	c := NewBHConverter(domain, domainSID)
 	c.IndexObjects(users, computers, groups)
 
-	zipPath := filepath.Join(outDir, fmt.Sprintf("bloodhound_%s.zip",
-		time.Now().Format("20060102_150405")))
+	zipPath := filepath.Join(outDir, fmt.Sprintf("%s_bloodhound.zip", filePrefix))
 	f, err := os.Create(zipPath)
 	if err != nil {
 		return err

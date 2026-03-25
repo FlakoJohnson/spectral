@@ -131,8 +131,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	// In stealth mode, use a generic output dir name if still default
-	if *stealth && *outDir == "spectral_output" {
+	// Build evidence-keeping prefix: IP_YYYYMMDD
+	dateStr := time.Now().Format("20060102")
+	filePrefix := fmt.Sprintf("%s_%s", *target, dateStr)
+
+	// Output directory: <base>/<IP>_<YYYYMMDD>/
+	if *outDir == "spectral_output" {
+		*outDir = filePrefix
+	}
+
+	// In stealth mode, use a generic output dir name
+	if *stealth {
 		h := sha256.Sum256([]byte(time.Now().String()))
 		*outDir = fmt.Sprintf("out_%x", h[:6])
 	}
@@ -141,9 +150,14 @@ func main() {
 		log.Fatalf("[-] Output dir: %v", err)
 	}
 
-	w := output.NewWriter(*outDir, !*quiet)
+	w := output.NewWriter(*outDir, filePrefix, !*quiet)
 	if *stealth {
 		w.SetObfuscate(true)
+	}
+
+	// Print target info after banner
+	if !*quiet {
+		output.PrintTargetInfo(*target, *domain, *username, *outDir)
 	}
 	modes := expandModes(*mode)
 
@@ -161,7 +175,7 @@ func main() {
 	// ── Unauthenticated rootDSE — runs before any ADWS connection ──────
 	if contains(modes, "rootdse") {
 		if !*quiet {
-			log.Printf("[*] Querying rootDSE on %s:%s (no credentials)", *target, *ldapPort)
+			log.Printf("[%s] [*] Querying rootDSE on %s:%s (no credentials)", ts(), *target, *ldapPort)
 		}
 		dse, err := recon.QueryRootDSE(*target, *ldapPort, *proxyURL)
 		if err != nil {
@@ -176,7 +190,7 @@ func main() {
 	// If nothing left to do, exit.
 	if len(modes) == 0 && *targetObj == "" {
 		if !*quiet {
-			log.Printf("[+] Done. Output saved to: %s", *outDir)
+			log.Printf("[%s] [+] Done. Output saved to: %s", ts(), *outDir)
 		}
 		return
 	}
@@ -226,7 +240,7 @@ func main() {
 	defer client.Close()
 
 	if !*quiet {
-		log.Printf("[+] Connected to %s:%s", *target, *port)
+		log.Printf("[%s] [+] Connected to %s:%s via ADWS", ts(), *target, *port)
 	}
 
 	if *baseDN == "" {
@@ -267,7 +281,7 @@ func main() {
 			log.Printf("[*] -bh: domain SID not resolved (run with -m all or -m users to populate)")
 		}
 		if err := output.WriteBHZip(
-			*outDir, *domain, domainSID,
+			*outDir, filePrefix, *domain, domainSID,
 			coll.users, coll.computers, coll.groups, coll.gpos, coll.trusts,
 		); err != nil {
 			log.Printf("[-] BloodHound zip: %v", err)
@@ -275,7 +289,7 @@ func main() {
 	}
 
 	if !*quiet {
-		log.Printf("[+] Done. Output saved to: %s", *outDir)
+		log.Printf("[%s] [+] Done. Output saved to: %s", ts(), *outDir)
 	}
 }
 
@@ -535,6 +549,10 @@ func sanitise(s string) string {
 		}
 		return '-'
 	}, s)
+}
+
+func ts() string {
+	return time.Now().Format("15:04:05")
 }
 
 func contains(ss []string, s string) bool {

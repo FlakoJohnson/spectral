@@ -11,22 +11,29 @@ import (
 	"time"
 )
 
-// Writer writes JSON output files.
+// Writer writes JSON output files with evidence-keeping naming.
 type Writer struct {
 	dir       string
+	prefix    string // IP_YYYYMMDD prefix for filenames
 	verbose   bool
 	obfuscate bool
-	manifest  map[string]string // hash -> original name
+	manifest  map[string]string
 }
 
 // NewWriter creates a Writer targeting the given directory.
-func NewWriter(dir string, verbose bool) *Writer {
-	return &Writer{dir: dir, verbose: verbose, manifest: make(map[string]string)}
+// prefix is used for filenames: e.g. "10.10.10.10_20260324"
+func NewWriter(dir, prefix string, verbose bool) *Writer {
+	return &Writer{dir: dir, prefix: prefix, verbose: verbose, manifest: make(map[string]string)}
 }
 
 // SetObfuscate enables filename obfuscation for stealth mode.
 func (w *Writer) SetObfuscate(on bool) {
 	w.obfuscate = on
+}
+
+// Prefix returns the current file prefix.
+func (w *Writer) Prefix() string {
+	return w.prefix
 }
 
 // Envelope wraps results with metadata for later analysis.
@@ -36,14 +43,13 @@ type Envelope struct {
 	Data        interface{} `json:"data"`
 }
 
-// Write serialises data to <dir>/<name> as pretty JSON.
+// Write serialises data to <dir>/<prefix>_<name> as pretty JSON.
 func (w *Writer) Write(name string, data interface{}) {
 	env := Envelope{
 		CollectedAt: time.Now().UTC().Format(time.RFC3339),
 		Data:        data,
 	}
 
-	// Set count where possible.
 	switch v := data.(type) {
 	case []interface{}:
 		env.Count = len(v)
@@ -55,12 +61,12 @@ func (w *Writer) Write(name string, data interface{}) {
 		return
 	}
 
-	outName := name
+	// Build filename: prefix_name (e.g. 10.10.10.10_20260324_users.json)
+	outName := fmt.Sprintf("%s_%s", w.prefix, name)
 	if w.obfuscate {
 		h := sha256.Sum256([]byte(name))
 		outName = fmt.Sprintf("%x.json", h[:6])
 		w.manifest[outName] = name
-		// Write manifest so operator can decode filenames
 		w.writeManifest()
 	}
 
@@ -71,11 +77,11 @@ func (w *Writer) Write(name string, data interface{}) {
 	}
 
 	if w.verbose {
-		log.Printf("[+] Wrote %s (%s)", path, humanSize(len(b)))
+		ts := time.Now().Format("15:04:05")
+		log.Printf("[%s] [+] Wrote %s (%s)", ts, path, humanSize(len(b)))
 	}
 }
 
-// writeManifest saves the hash->name mapping to a manifest file.
 func (w *Writer) writeManifest() {
 	b, _ := json.MarshalIndent(w.manifest, "", "  ")
 	path := filepath.Join(w.dir, ".manifest.json")
