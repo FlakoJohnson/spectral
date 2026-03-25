@@ -30,7 +30,7 @@ const (
 	bhMethodTrusts     = 0x0010
 	bhMethodACL        = 0x0020
 
-	bhVersion = 5
+	bhVersion = 6
 )
 
 // ── Top-level BH file wrapper ─────────────────────────────────────────────
@@ -180,7 +180,10 @@ type bhDomainProps struct {
 	Domain            string `json:"domain"`
 	DomainSID         string `json:"domainsid"`
 	DistinguishedName string `json:"distinguishedname"`
+	FunctionalLevel   string `json:"functionallevel"`
+	Collected         bool   `json:"collected"`
 	HighValue         bool   `json:"highvalue"`
+	WhenCreated       int64  `json:"whencreated"`
 }
 
 // Shared helper types.
@@ -197,12 +200,13 @@ type bhAce struct {
 }
 
 type bhTrust struct {
-	TargetDomainSID  string `json:"TargetDomainSID"`
-	TargetDomainName string `json:"TargetDomainName"`
-	IsTransitive     bool   `json:"IsTransitive"`
-	TrustDirection   string `json:"TrustDirection"`
-	TrustType        string `json:"TrustType"`
-	SidFilteringEnabled bool `json:"SidFilteringEnabled"`
+	TargetDomainSid     string `json:"TargetDomainSid"`
+	TargetDomainName    string `json:"TargetDomainName"`
+	IsTransitive        bool   `json:"IsTransitive"`
+	TrustDirection      string `json:"TrustDirection"`
+	TrustType           string `json:"TrustType"`
+	SidFilteringEnabled bool   `json:"SidFilteringEnabled"`
+	TGTDelegationEnabled bool  `json:"TGTDelegationEnabled"`
 }
 
 type bhGPOLink struct {
@@ -455,12 +459,16 @@ func (c *BHConverter) ConvertTrusts(objects []adws.ADObject) []bhTrust {
 		ttype := parseInt64(enum.AttrStr(obj, "trustType"))
 		attrs := parseInt64(enum.AttrStr(obj, "trustAttributes"))
 
+		targetSID := enum.SIDStr(obj, "securityIdentifier")
+
 		trust := bhTrust{
-			TargetDomainName:    strings.ToUpper(name),
-			TrustDirection:      trustDirectionStr(direction),
-			TrustType:           trustTypeStr(ttype),
-			IsTransitive:        attrs&0x8 != 0,
-			SidFilteringEnabled: attrs&0x4 != 0,
+			TargetDomainSid:      targetSID,
+			TargetDomainName:     strings.ToUpper(name),
+			TrustDirection:       trustDirectionStr(direction),
+			TrustType:            trustTypeStr(ttype),
+			IsTransitive:         attrs&0x8 != 0,
+			SidFilteringEnabled:  attrs&0x4 != 0,
+			TGTDelegationEnabled: attrs&0x20 != 0,
 		}
 		out = append(out, trust)
 	}
@@ -502,12 +510,25 @@ func WriteBHZip(
 	bhGPOs := c.ConvertGPOs(gpos)
 	bhTrustsSlice := c.ConvertTrusts(trusts)
 
+	// Build distinguished name from domain FQDN: corp.local → DC=CORP,DC=LOCAL
+	dnParts := strings.Split(strings.ToUpper(domain), ".")
+	dnComponents := make([]string, len(dnParts))
+	for i, p := range dnParts {
+		dnComponents[i] = "DC=" + p
+	}
+	domainDN := strings.Join(dnComponents, ",")
+
 	domainObj := bhDomain{
 		ObjectIdentifier: domainSID,
 		Properties: bhDomainProps{
-			Name:      domain,
-			Domain:    strings.ToUpper(domain),
-			DomainSID: domainSID,
+			Name:              strings.ToUpper(domain),
+			Domain:            strings.ToUpper(domain),
+			DomainSID:         domainSID,
+			DistinguishedName: domainDN,
+			FunctionalLevel:   "Unknown",
+			Collected:         true,
+			HighValue:         true,
+			WhenCreated:       -1,
 		},
 		Trusts:       bhTrustsSlice,
 		Aces:         []bhAce{},

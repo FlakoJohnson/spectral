@@ -170,8 +170,8 @@ func (e *Enumerator) resolveGroupDNs(dns []string) ([]adws.ADObject, error) {
 // Attributes is map[string][]ADWSValue — key is the attribute name.
 func AttrSliceStr(obj adws.ADObject, name string) []string {
 	vals, ok := obj.Attributes[name]
-	if !ok {
-		return nil
+	if !ok || len(vals) == 0 {
+		return []string{}
 	}
 	strs := make([]string, len(vals))
 	for i, v := range vals {
