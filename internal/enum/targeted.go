@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"spectral/internal/adws"
+	"spectral/internal/opsec"
 )
 
 // UAC bitmask constants used in LDAP extensible-match filters.
@@ -59,11 +60,39 @@ func (e *Enumerator) Kerberoastable() ([]adws.ADObject, error) {
 		log.Printf("[*] Kerberoastable users")
 	}
 
-	filter := fmt.Sprintf("(&(objectClass=user)(servicePrincipalName=*)"+
-		"(!(sAMAccountName=krbtgt))(!(sAMAccountName=*$))%s)",
-		notDisabled())
+	// Multiple equivalent filter variants to avoid static signatures.
+	// MDI fingerprints (servicePrincipalName=*) — variant D avoids it entirely.
+	nd := notDisabled()
+	filter := opsec.PickVariant(
+		// A: objectClass + SPN filter (standard)
+		fmt.Sprintf("(&(objectClass=user)(servicePrincipalName=*)(!(sAMAccountName=krbtgt))(!(sAMAccountName=*$))%s)", nd),
+		// B: objectCategory + objectClass + SPN
+		fmt.Sprintf("(&(objectCategory=person)(objectClass=user)(servicePrincipalName=*)(!(sAMAccountName=krbtgt))(!(sAMAccountName=*$))%s)", nd),
+		// C: sAMAccountType (normal user = 805306368) + SPN — no objectClass at all
+		fmt.Sprintf("(&(sAMAccountType=805306368)(servicePrincipalName=*)(!(sAMAccountName=krbtgt))%s)", nd),
+		// D: broad user sweep, client-side SPN filter — nothing SPN-related on wire
+		fmt.Sprintf("(&(objectCategory=person)(objectClass=user)%s)", nd),
+	)
 
-	return e.runTargeted(filter, kerberoastableAttrs, "kerberoastable")
+	results, err := e.runTargeted(filter, e.prepAttrs(kerberoastableAttrs), "kerberoastable")
+	if err != nil {
+		return nil, err
+	}
+
+	// Client-side filter: keep only entries with an SPN, exclude krbtgt and machine accounts.
+	var filtered []adws.ADObject
+	for _, obj := range results {
+		sam := attrStr(obj, "sAMAccountName")
+		spns, _ := obj.Attributes["servicePrincipalName"]
+		if len(spns) == 0 || sam == "krbtgt" || (len(sam) > 0 && sam[len(sam)-1] == '$') {
+			continue
+		}
+		filtered = append(filtered, obj)
+	}
+	if e.verbose {
+		log.Printf("[+] Kerberoastable (after client filter): %d", len(filtered))
+	}
+	return filtered, nil
 }
 
 // -------------------------------------------------------------------------
@@ -85,10 +114,15 @@ func (e *Enumerator) ASREPRoastable() ([]adws.ADObject, error) {
 		log.Printf("[*] AS-REP roastable users")
 	}
 
-	filter := fmt.Sprintf("(&(objectClass=user)%s%s)",
-		uacFilter(uacDontReqPreauth), notDisabled())
+	nd := notDisabled()
+	uacPre := uacFilter(uacDontReqPreauth)
+	filter := opsec.PickVariant(
+		fmt.Sprintf("(&(objectClass=user)%s%s)", uacPre, nd),
+		fmt.Sprintf("(&(objectCategory=person)(objectClass=user)%s%s)", uacPre, nd),
+		fmt.Sprintf("(&(sAMAccountType=805306368)%s%s)", uacPre, nd),
+	)
 
-	return e.runTargeted(filter, asrepAttrs, "asreproastable")
+	return e.runTargeted(filter, e.prepAttrs(asrepAttrs), "asreproastable")
 }
 
 // -------------------------------------------------------------------------
@@ -123,13 +157,13 @@ func (e *Enumerator) UnconstrainedDelegation() ([]adws.ADObject, error) {
 	userFilter := fmt.Sprintf("(&(objectCategory=person)(objectClass=user)%s%s)",
 		uacFilter(uacTrustedForDeleg), notDisabled())
 
-	comps, err := e.runTargeted(compFilter, unconstrainedAttrs, "unconstrained-computers")
+	comps, err := e.runTargeted(compFilter, e.prepAttrs(unconstrainedAttrs), "unconstrained-computers")
 	if err != nil {
 		return nil, err
 	}
 	e.pace.BetweenRequests()
 
-	users, err := e.runTargeted(userFilter, unconstrainedAttrs, "unconstrained-users")
+	users, err := e.runTargeted(userFilter, e.prepAttrs(unconstrainedAttrs), "unconstrained-users")
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +192,7 @@ func (e *Enumerator) ConstrainedDelegation() ([]adws.ADObject, error) {
 	}
 
 	filter := "(msDS-AllowedToDelegateTo=*)"
-	return e.runTargeted(filter, constrainedAttrs, "constrained-delegation")
+	return e.runTargeted(filter, e.prepAttrs(constrainedAttrs), "constrained-delegation")
 }
 
 // -------------------------------------------------------------------------
@@ -181,7 +215,7 @@ func (e *Enumerator) RBCD() ([]adws.ADObject, error) {
 	}
 
 	filter := "(msDS-AllowedToActOnBehalfOfOtherIdentity=*)"
-	return e.runTargeted(filter, rbcdAttrs, "rbcd")
+	return e.runTargeted(filter, e.prepAttrs(rbcdAttrs), "rbcd")
 }
 
 // -------------------------------------------------------------------------
@@ -208,7 +242,7 @@ func (e *Enumerator) AdminCount() ([]adws.ADObject, error) {
 	}
 
 	filter := "(adminCount=1)"
-	return e.runTargeted(filter, adminCountAttrs, "admincount")
+	return e.runTargeted(filter, e.prepAttrs(adminCountAttrs), "admincount")
 }
 
 // -------------------------------------------------------------------------
@@ -231,7 +265,7 @@ func (e *Enumerator) ShadowCredentials() ([]adws.ADObject, error) {
 	}
 
 	filter := "(msDS-KeyCredentialLink=*)"
-	return e.runTargeted(filter, shadowCredAttrs, "shadow-credentials")
+	return e.runTargeted(filter, e.prepAttrs(shadowCredAttrs), "shadow-credentials")
 }
 
 // -------------------------------------------------------------------------
@@ -260,13 +294,13 @@ func (e *Enumerator) LAPS() ([]adws.ADObject, error) {
 	legacyFilter := "(&(objectClass=computer)(ms-Mcs-AdmPwd=*))"
 	newFilter := "(&(objectClass=computer)(msLAPS-Password=*))"
 
-	legacy, err := e.runTargeted(legacyFilter, lapsAttrs, "laps-legacy")
+	legacy, err := e.runTargeted(legacyFilter, e.prepAttrs(lapsAttrs), "laps-legacy")
 	if err != nil {
 		legacy = nil
 	}
 	e.pace.BetweenRequests()
 
-	newLAPS, err := e.runTargeted(newFilter, lapsAttrs, "laps-new")
+	newLAPS, err := e.runTargeted(newFilter, e.prepAttrs(lapsAttrs), "laps-new")
 	if err != nil {
 		newLAPS = nil
 	}
@@ -302,7 +336,7 @@ func (e *Enumerator) PasswordNeverExpires() ([]adws.ADObject, error) {
 	filter := fmt.Sprintf("(&(objectCategory=person)(objectClass=user)%s%s)",
 		uacFilter(uacDontExpirePass), notDisabled())
 
-	return e.runTargeted(filter, stalePassAttrs, "pwd-never-expires")
+	return e.runTargeted(filter, e.prepAttrs(stalePassAttrs), "pwd-never-expires")
 }
 
 // -------------------------------------------------------------------------
@@ -325,7 +359,7 @@ func (e *Enumerator) StaleAccounts(staleDays int) ([]adws.ADObject, error) {
 		"(&(objectCategory=person)(objectClass=user)%s(lastLogonTimestamp<=%d))",
 		notDisabled(), fileTime)
 
-	return e.runTargeted(filter, stalePassAttrs, "stale-accounts")
+	return e.runTargeted(filter, e.prepAttrs(stalePassAttrs), "stale-accounts")
 }
 
 // toWindowsFileTime converts a Go time to Windows FILETIME.
@@ -364,7 +398,7 @@ func (e *Enumerator) FineGrainedPasswordPolicies() ([]adws.ADObject, error) {
 	psoDN := "CN=Password Settings Container,CN=System," + e.baseDN
 	filter := "(objectClass=msDS-PasswordSettings)"
 
-	return e.runTargetedScoped(psoDN, filter, fgppAttrs, adws.ScopeOneLevel, "fgpp")
+	return e.runTargetedScoped(psoDN, filter, e.prepAttrs(fgppAttrs), adws.ScopeOneLevel, "fgpp")
 }
 
 // -------------------------------------------------------------------------
@@ -384,7 +418,7 @@ func (e *Enumerator) runTargetedScoped(
 	scope int,
 	label string,
 ) ([]adws.ADObject, error) {
-	results, err := e.client.Query(baseDN, filter, attrs, scope)
+	results, err := e.client.Query(baseDN, e.prepFilter(filter), attrs, scope)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", label, err)
 	}

@@ -29,10 +29,10 @@ func (e *Enumerator) Trusts() ([]adws.ADObject, error) {
 
 	err := e.client.QueryBatched(
 		systemDN,
-		trustFilter,
-		trustAttrs,
+		e.prepFilter(trustFilter),
+		e.prepAttrs(trustAttrs),
 		adws.ScopeOneLevel,
-		e.batchSize,
+		e.batch(),
 		func(batch []adws.ADObject) error {
 			results = append(results, batch...)
 			e.pace.BetweenRequests()

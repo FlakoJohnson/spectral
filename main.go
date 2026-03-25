@@ -1,9 +1,11 @@
 package main
 
 import (
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
@@ -54,6 +56,12 @@ Output & pacing:
   -x           Debug SOAP XML
   -bh          Also write BloodHound CE zip (users/computers/groups/gpos/trusts)
 
+Stealth:
+  -s           Stealth mode: randomize filters, attrs, batch sizes, query order,
+               suppress banner, obfuscate output filenames. Implies -q.
+  -Bmin int    Minimum batch size for stealth randomization (default: 75)
+  -Bmax int    Maximum batch size for stealth randomization (default: 125)
+
 Proxy:
   -proxy string  SOCKS5 proxy URL  (e.g. socks5://127.0.0.1:1080)
                Also reads ALL_PROXY / SOCKS5_PROXY env vars if flag is omitted.
@@ -83,6 +91,9 @@ func main() {
 		debugXML  = flag.Bool("x", false, "")
 		bhOut     = flag.Bool("bh", false, "")
 		proxyURL  = flag.String("proxy", "", "")
+		stealth   = flag.Bool("s", false, "")
+		batchMin  = flag.Int("Bmin", 75, "")
+		batchMax  = flag.Int("Bmax", 125, "")
 	)
 
 	flag.Usage = usage
@@ -98,7 +109,14 @@ func main() {
 		}
 	}
 
-	output.PrintBanner()
+	// Stealth mode implies quiet
+	if *stealth {
+		*quiet = true
+	}
+
+	if !*stealth {
+		output.PrintBanner()
+	}
 
 	if *target == "" {
 		flag.Usage()
@@ -109,12 +127,32 @@ func main() {
 		os.Exit(1)
 	}
 
+	// In stealth mode, use a generic output dir name if still default
+	if *stealth && *outDir == "spectral_output" {
+		h := sha256.Sum256([]byte(time.Now().String()))
+		*outDir = fmt.Sprintf("out_%x", h[:6])
+	}
+
 	if err := os.MkdirAll(*outDir, 0700); err != nil {
 		log.Fatalf("[-] Output dir: %v", err)
 	}
 
 	w := output.NewWriter(*outDir, !*quiet)
+	if *stealth {
+		w.SetObfuscate(true)
+	}
 	modes := expandModes(*mode)
+
+	// Stealth: randomize enumeration order to avoid behavioral fingerprinting
+	if *stealth {
+		// Separate rootdse (must run first) from other modes
+		hasRootDSE := contains(modes, "rootdse")
+		modes = filterOut(modes, "rootdse")
+		rand.Shuffle(len(modes), func(i, j int) { modes[i], modes[j] = modes[j], modes[i] })
+		if hasRootDSE {
+			modes = append([]string{"rootdse"}, modes...)
+		}
+	}
 
 	// ── Unauthenticated rootDSE — runs before any ADWS connection ──────
 	if contains(modes, "rootdse") {
@@ -168,6 +206,12 @@ func main() {
 		time.Duration(*pauseMs)*time.Millisecond,
 	)
 
+	// Stealth: random delay before ADWS connection (1-5s)
+	if *stealth {
+		delay := time.Duration(1000+rand.Intn(4000)) * time.Millisecond
+		time.Sleep(delay)
+	}
+
 	client, err := adws.NewClient(cfg)
 	if err != nil {
 		log.Fatalf("[-] %v", err)
@@ -185,7 +229,12 @@ func main() {
 		*baseDN = domainToBaseDN(*domain)
 	}
 
-	e := enum.New(client, pace, *batch, *baseDN, !*quiet)
+	var e *enum.Enumerator
+	if *stealth {
+		e = enum.NewStealth(client, pace, *batchMin, *batchMax, *baseDN, !*quiet)
+	} else {
+		e = enum.New(client, pace, *batch, *baseDN, !*quiet)
+	}
 
 	// collector holds sweep results for optional BH output.
 	coll := &collector{}

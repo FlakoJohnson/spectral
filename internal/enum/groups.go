@@ -19,10 +19,10 @@ func (e *Enumerator) Groups() ([]adws.ADObject, error) {
 
 	err := e.client.QueryBatched(
 		e.baseDN,
-		groupFilter,
-		groupAttrs,
+		e.prepFilter(groupFilter),
+		e.prepAttrs(groupAttrs),
 		adws.ScopeSubtree,
-		e.batchSize,
+		e.batch(),
 		func(batch []adws.ADObject) error {
 			results = append(results, batch...)
 			if e.verbose {

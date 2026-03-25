@@ -23,10 +23,10 @@ func (e *Enumerator) GPOs() ([]adws.ADObject, error) {
 
 	err := e.client.QueryBatched(
 		gpoDN,
-		gpoFilter,
-		gpoAttrs,
+		e.prepFilter(gpoFilter),
+		e.prepAttrs(gpoAttrs),
 		adws.ScopeSubtree,
-		e.batchSize,
+		e.batch(),
 		func(batch []adws.ADObject) error {
 			results = append(results, batch...)
 			e.pace.BetweenRequests()
@@ -41,10 +41,10 @@ func (e *Enumerator) GPOs() ([]adws.ADObject, error) {
 		results = nil
 		err = e.client.QueryBatched(
 			e.baseDN,
-			gpoFilter,
-			gpoAttrs,
+			e.prepFilter(gpoFilter),
+			e.prepAttrs(gpoAttrs),
 			adws.ScopeSubtree,
-			e.batchSize,
+			e.batch(),
 			func(batch []adws.ADObject) error {
 				results = append(results, batch...)
 				e.pace.BetweenRequests()

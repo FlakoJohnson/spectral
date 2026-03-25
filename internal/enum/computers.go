@@ -19,10 +19,10 @@ func (e *Enumerator) Computers() ([]adws.ADObject, error) {
 
 	err := e.client.QueryBatched(
 		e.baseDN,
-		computerFilter,
-		computerAttrs,
+		e.prepFilter(computerFilter),
+		e.prepAttrs(computerAttrs),
 		adws.ScopeSubtree,
-		e.batchSize,
+		e.batch(),
 		func(batch []adws.ADObject) error {
 			results = append(results, batch...)
 			if e.verbose {

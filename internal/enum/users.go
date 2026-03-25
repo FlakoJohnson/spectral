@@ -20,10 +20,10 @@ func (e *Enumerator) Users() ([]adws.ADObject, error) {
 
 	err := e.client.QueryBatched(
 		e.baseDN,
-		userFilter,
-		userAttrs,
+		e.prepFilter(userFilter),
+		e.prepAttrs(userAttrs),
 		adws.ScopeSubtree,
-		e.batchSize,
+		e.batch(),
 		func(batch []adws.ADObject) error {
 			results = append(results, batch...)
 			if e.verbose {

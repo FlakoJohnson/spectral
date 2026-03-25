@@ -2,6 +2,7 @@
 package output
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,13 +13,20 @@ import (
 
 // Writer writes JSON output files.
 type Writer struct {
-	dir     string
-	verbose bool
+	dir       string
+	verbose   bool
+	obfuscate bool
+	manifest  map[string]string // hash -> original name
 }
 
 // NewWriter creates a Writer targeting the given directory.
 func NewWriter(dir string, verbose bool) *Writer {
-	return &Writer{dir: dir, verbose: verbose}
+	return &Writer{dir: dir, verbose: verbose, manifest: make(map[string]string)}
+}
+
+// SetObfuscate enables filename obfuscation for stealth mode.
+func (w *Writer) SetObfuscate(on bool) {
+	w.obfuscate = on
 }
 
 // Envelope wraps results with metadata for later analysis.
@@ -47,15 +55,31 @@ func (w *Writer) Write(name string, data interface{}) {
 		return
 	}
 
-	path := filepath.Join(w.dir, name)
+	outName := name
+	if w.obfuscate {
+		h := sha256.Sum256([]byte(name))
+		outName = fmt.Sprintf("%x.json", h[:6])
+		w.manifest[outName] = name
+		// Write manifest so operator can decode filenames
+		w.writeManifest()
+	}
+
+	path := filepath.Join(w.dir, outName)
 	if err := os.WriteFile(path, b, 0600); err != nil {
-		log.Printf("[-] Write %s: %v", name, err)
+		log.Printf("[-] Write %s: %v", outName, err)
 		return
 	}
 
 	if w.verbose {
 		log.Printf("[+] Wrote %s (%s)", path, humanSize(len(b)))
 	}
+}
+
+// writeManifest saves the hash->name mapping to a manifest file.
+func (w *Writer) writeManifest() {
+	b, _ := json.MarshalIndent(w.manifest, "", "  ")
+	path := filepath.Join(w.dir, ".manifest.json")
+	os.WriteFile(path, b, 0600)
 }
 
 func humanSize(n int) string {
