@@ -60,21 +60,34 @@ func (e *Enumerator) Kerberoastable() ([]adws.ADObject, error) {
 		log.Printf("[*] Kerberoastable users")
 	}
 
-	// Multiple equivalent filter variants to avoid static signatures.
-	// MDI fingerprints (servicePrincipalName=*) — variant D avoids it entirely.
+	// MDI normalizes filter casing and fingerprints (servicePrincipalName=*).
+	// In stealth mode: always use a broad user sweep with client-side SPN filtering
+	// so nothing SPN-related ever hits the wire.
+	// In normal mode: use traditional SPN filter variants (faster, fewer results).
 	nd := notDisabled()
-	filter := opsec.PickVariant(
-		// A: objectClass + SPN filter (standard)
-		fmt.Sprintf("(&(objectClass=user)(servicePrincipalName=*)(!(sAMAccountName=krbtgt))(!(sAMAccountName=*$))%s)", nd),
-		// B: objectCategory + objectClass + SPN
-		fmt.Sprintf("(&(objectCategory=person)(objectClass=user)(servicePrincipalName=*)(!(sAMAccountName=krbtgt))(!(sAMAccountName=*$))%s)", nd),
-		// C: sAMAccountType (normal user = 805306368) + SPN — no objectClass at all
-		fmt.Sprintf("(&(sAMAccountType=805306368)(servicePrincipalName=*)(!(sAMAccountName=krbtgt))%s)", nd),
-		// D: broad user sweep, client-side SPN filter — nothing SPN-related on wire
-		fmt.Sprintf("(&(objectCategory=person)(objectClass=user)%s)", nd),
-	)
+	var filter string
+	if e.stealth {
+		// Stealth: plain user query — MDI sees a normal Get-ADUser sweep
+		filter = opsec.PickVariant(
+			fmt.Sprintf("(&(objectCategory=person)(objectClass=user)%s)", nd),
+			fmt.Sprintf("(&(sAMAccountType=805306368)%s)", nd),
+		)
+	} else {
+		filter = opsec.PickVariant(
+			fmt.Sprintf("(&(objectClass=user)(servicePrincipalName=*)(!(sAMAccountName=krbtgt))(!(sAMAccountName=*$))%s)", nd),
+			fmt.Sprintf("(&(objectCategory=person)(objectClass=user)(servicePrincipalName=*)(!(sAMAccountName=krbtgt))(!(sAMAccountName=*$))%s)", nd),
+			fmt.Sprintf("(&(sAMAccountType=805306368)(servicePrincipalName=*)(!(sAMAccountName=krbtgt))%s)", nd),
+		)
+	}
 
-	results, err := e.runTargeted(filter, e.prepAttrs(kerberoastableAttrs), "kerberoastable")
+	// In stealth mode, use the broad userAttrs (same as -m users) to look
+	// identical to a normal user sweep. SPN data still comes back since AD
+	// returns all readable attrs for matching objects.
+	attrs := kerberoastableAttrs
+	if e.stealth {
+		attrs = userAttrs
+	}
+	results, err := e.runTargeted(filter, e.prepAttrs(attrs), "kerberoastable")
 	if err != nil {
 		return nil, err
 	}
