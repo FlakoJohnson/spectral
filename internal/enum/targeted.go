@@ -57,7 +57,7 @@ var kerberoastableAttrs = []string{
 // Get-ADUser -Filter {ServicePrincipalName -ne "$null"} pattern.
 func (e *Enumerator) Kerberoastable() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Kerberoastable users")
+		log.Printf("%s [*] Kerberoastable users", ts())
 	}
 
 	// MDI normalizes filter casing and fingerprints (servicePrincipalName=*).
@@ -103,7 +103,7 @@ func (e *Enumerator) Kerberoastable() ([]adws.ADObject, error) {
 		filtered = append(filtered, obj)
 	}
 	if e.verbose {
-		log.Printf("[+] Kerberoastable (after client filter): %d", len(filtered))
+		log.Printf("%s [+] Kerberoastable (after client filter): %d", ts(), len(filtered))
 	}
 	return filtered, nil
 }
@@ -124,7 +124,7 @@ var asrepAttrs = []string{
 // ASREPRoastable returns enabled users with DONT_REQUIRE_PREAUTH set.
 func (e *Enumerator) ASREPRoastable() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] AS-REP roastable users")
+		log.Printf("%s [*] AS-REP roastable users", ts())
 	}
 
 	nd := notDisabled()
@@ -158,7 +158,7 @@ var unconstrainedAttrs = []string{
 // can be forged by an attacker who compromises them.
 func (e *Enumerator) UnconstrainedDelegation() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Unconstrained delegation")
+		log.Printf("%s [*] Unconstrained delegation", ts())
 	}
 
 	// Computers (excluding DCs — they have it by design).
@@ -201,7 +201,7 @@ var constrainedAttrs = []string{
 // TRUSTED_TO_AUTH_FOR_DELEGATION (0x1000000) on top = protocol-transition.
 func (e *Enumerator) ConstrainedDelegation() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Constrained delegation")
+		log.Printf("%s [*] Constrained delegation", ts())
 	}
 
 	filter := "(msDS-AllowedToDelegateTo=*)"
@@ -224,7 +224,7 @@ var rbcdAttrs = []string{
 // prime candidates for RBCD exploitation.
 func (e *Enumerator) RBCD() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] RBCD candidates")
+		log.Printf("%s [*] RBCD candidates", ts())
 	}
 
 	filter := "(msDS-AllowedToActOnBehalfOfOtherIdentity=*)"
@@ -251,7 +251,7 @@ var adminCountAttrs = []string{
 // Includes disabled accounts — those are often forgotten but still dangerous.
 func (e *Enumerator) AdminCount() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] AdminCount=1 objects")
+		log.Printf("%s [*] AdminCount=1 objects", ts())
 	}
 
 	filter := "(adminCount=1)"
@@ -274,7 +274,7 @@ var shadowCredAttrs = []string{
 // attacker-written values here allow certificate-based auth as that object.
 func (e *Enumerator) ShadowCredentials() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Shadow credentials")
+		log.Printf("%s [*] Shadow credentials", ts())
 	}
 
 	filter := "(msDS-KeyCredentialLink=*)"
@@ -300,7 +300,7 @@ var lapsAttrs = []string{
 // If the caller has read rights, the password attribute will be populated.
 func (e *Enumerator) LAPS() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] LAPS-managed computers")
+		log.Printf("%s [*] LAPS-managed computers", ts())
 	}
 
 	// Try legacy LAPS attribute first, fall back to Windows LAPS.
@@ -320,7 +320,7 @@ func (e *Enumerator) LAPS() ([]adws.ADObject, error) {
 
 	merged := dedupe(append(legacy, newLAPS...))
 	if e.verbose {
-		log.Printf("[+] LAPS computers: %d", len(merged))
+		log.Printf("%s [+] LAPS computers: %d", ts(), len(merged))
 	}
 	return merged, nil
 }
@@ -343,7 +343,7 @@ var stalePassAttrs = []string{
 // never expire — frequently service accounts with weak/reused passwords.
 func (e *Enumerator) PasswordNeverExpires() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Password-never-expires accounts")
+		log.Printf("%s [*] Password-never-expires accounts", ts())
 	}
 
 	filter := fmt.Sprintf("(&(objectCategory=person)(objectClass=user)%s%s)",
@@ -360,7 +360,7 @@ func (e *Enumerator) PasswordNeverExpires() ([]adws.ADObject, error) {
 // Uses lastLogonTimestamp (replicated) rather than lastLogon (per-DC).
 func (e *Enumerator) StaleAccounts(staleDays int) ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Stale accounts (>%d days)", staleDays)
+		log.Printf("%s [*] Stale accounts (>%d days)", ts(), staleDays)
 	}
 
 	// lastLogonTimestamp is in Windows FILETIME (100-nanosecond intervals
@@ -405,7 +405,7 @@ var fgppAttrs = []string{
 // These often apply to privileged accounts with weaker lockout settings.
 func (e *Enumerator) FineGrainedPasswordPolicies() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Fine-grained password policies")
+		log.Printf("%s [*] Fine-grained password policies", ts())
 	}
 
 	psoDN := "CN=Password Settings Container,CN=System," + e.baseDN
@@ -436,7 +436,7 @@ func (e *Enumerator) runTargetedScoped(
 		return nil, fmt.Errorf("%s: %w", label, err)
 	}
 	if e.verbose {
-		log.Printf("[+] %s: %d", label, len(results))
+		log.Printf("%s [+] %s: %d", ts(), label, len(results))
 	}
 	return results, nil
 }

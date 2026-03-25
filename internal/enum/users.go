@@ -13,7 +13,7 @@ const userFilter = "(&(objectCategory=person)(objectClass=user))"
 // Users enumerates all user objects in the domain.
 func (e *Enumerator) Users() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Enumerating users")
+		log.Printf("%s [*] Enumerating users", ts())
 	}
 
 	var results []adws.ADObject
@@ -27,7 +27,7 @@ func (e *Enumerator) Users() ([]adws.ADObject, error) {
 		func(batch []adws.ADObject) error {
 			results = append(results, batch...)
 			if e.verbose {
-				log.Printf("[*]   users: %d", len(results))
+				log.Printf("%s [*]   users: %d", ts(), len(results))
 			}
 			e.pace.BetweenRequests()
 			return nil
@@ -38,7 +38,7 @@ func (e *Enumerator) Users() ([]adws.ADObject, error) {
 	}
 
 	if e.verbose {
-		log.Printf("[+] Users: %d", len(results))
+		log.Printf("%s [+] Users: %d", ts(), len(results))
 	}
 	return results, nil
 }

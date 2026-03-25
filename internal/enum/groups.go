@@ -12,7 +12,7 @@ const groupFilter = "(objectCategory=group)"
 // Groups enumerates all group objects in the domain.
 func (e *Enumerator) Groups() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Enumerating groups")
+		log.Printf("%s [*] Enumerating groups", ts())
 	}
 
 	var results []adws.ADObject
@@ -26,7 +26,7 @@ func (e *Enumerator) Groups() ([]adws.ADObject, error) {
 		func(batch []adws.ADObject) error {
 			results = append(results, batch...)
 			if e.verbose {
-				log.Printf("[*]   groups: %d", len(results))
+				log.Printf("%s [*]   groups: %d", ts(), len(results))
 			}
 			e.pace.BetweenRequests()
 			return nil
@@ -37,7 +37,7 @@ func (e *Enumerator) Groups() ([]adws.ADObject, error) {
 	}
 
 	if e.verbose {
-		log.Printf("[+] Groups: %d", len(results))
+		log.Printf("%s [+] Groups: %d", ts(), len(results))
 	}
 	return results, nil
 }

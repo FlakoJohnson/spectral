@@ -100,6 +100,8 @@ func main() {
 		batchMax  = flag.Int("Bmax", 125, "")
 	)
 
+	log.SetFlags(0) // disable default timestamp — we use our own
+
 	flag.Usage = usage
 	flag.Parse()
 
@@ -144,7 +146,7 @@ func main() {
 	}
 
 	if err := os.MkdirAll(*outDir, 0700); err != nil {
-		log.Fatalf("[-] Output dir: %v", err)
+		log.Fatalf("%s [-] Output dir: %v", ts(), err)
 	}
 
 	w := output.NewWriter(*outDir, filePrefix, !*quiet)
@@ -172,11 +174,11 @@ func main() {
 	// ── Unauthenticated rootDSE — runs before any ADWS connection ──────
 	if contains(modes, "rootdse") {
 		if !*quiet {
-			log.Printf("[%s] [*] Querying rootDSE on %s:%s (no credentials)", ts(), *target, *ldapPort)
+			log.Printf("%s [*] Querying rootDSE on %s:%s (no credentials)", ts(), *target, *ldapPort)
 		}
 		dse, err := recon.QueryRootDSE(*target, *ldapPort, *proxyURL)
 		if err != nil {
-			log.Printf("[-] rootDSE: %v", err)
+			log.Printf("%s [-] rootDSE: %v", ts(), err)
 		} else {
 			output.PrintRootDSE(dse)
 			w.Write("rootdse.json", dse)
@@ -187,14 +189,14 @@ func main() {
 	// If nothing left to do, exit.
 	if len(modes) == 0 && *targetObj == "" {
 		if !*quiet {
-			log.Printf("[%s] [+] Done. Output saved to: %s", ts(), *outDir)
+			log.Printf("%s [+] Done. Output saved to: %s", ts(), *outDir)
 		}
 		return
 	}
 
 	// ── ADWS modes require domain + credentials ─────────────────────────
 	if *domain == "" {
-		log.Fatalf("[-] -d (domain) is required for ADWS enumeration")
+		log.Fatalf("%s [-] -d (domain) is required for ADWS enumeration", ts())
 	}
 
 	if *ccache == "" {
@@ -229,15 +231,15 @@ func main() {
 
 	client, err := adws.NewClient(cfg)
 	if err != nil {
-		log.Fatalf("[-] %v", err)
+		log.Fatalf("%s [-] %v", ts(), err)
 	}
 	if err := client.Connect(); err != nil {
-		log.Fatalf("[-] Connect: %v", err)
+		log.Fatalf("%s [-] Connect: %v", ts(), err)
 	}
 	defer client.Close()
 
 	if !*quiet {
-		log.Printf("[%s] [+] Connected to %s:%s via ADWS", ts(), *target, *port)
+		log.Printf("%s [+] Connected to %s:%s via ADWS", ts(), *target, *port)
 	}
 
 	if *baseDN == "" {
@@ -275,18 +277,18 @@ func main() {
 	if *bhOut || hasBHData {
 		domainSID := coll.domainSID
 		if domainSID == "" && !*quiet {
-			log.Printf("[*] -bh: domain SID not resolved (run with -m all or -m users to populate)")
+			log.Printf("%s [*] domain SID not resolved (run with -m sweep or -m users to populate)", ts())
 		}
 		if err := output.WriteBHZip(
 			*outDir, filePrefix, *domain, domainSID,
 			coll.users, coll.computers, coll.groups, coll.gpos, coll.trusts,
 		); err != nil {
-			log.Printf("[-] BloodHound zip: %v", err)
+			log.Printf("%s [-] BloodHound zip: %v", ts(), err)
 		}
 	}
 
 	if !*quiet {
-		log.Printf("[%s] [+] Done. Output saved to: %s", ts(), *outDir)
+		log.Printf("%s [+] Done. Output saved to: %s", ts(), *outDir)
 	}
 }
 
@@ -351,7 +353,7 @@ func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays in
 	}
 
 	if res.err != nil {
-		log.Printf("[-] %s: %v", m, res.err)
+		log.Printf("%s [-] %s: %v", ts(), m, res.err)
 		return
 	}
 	w.Write(m+".json", res.data)
@@ -408,12 +410,12 @@ func runMode(e *enum.Enumerator, w *output.Writer, m string, staleDays int) {
 			output.PrintADCS(adcsResult)
 		}
 	default:
-		log.Printf("[-] Unknown mode: %s", m)
+		log.Printf("%s [-] Unknown mode: %s", ts(), m)
 		return
 	}
 
 	if res.err != nil {
-		log.Printf("[-] %s: %v", m, res.err)
+		log.Printf("%s [-] %s: %v", ts(), m, res.err)
 		return
 	}
 
@@ -425,7 +427,7 @@ func runMode(e *enum.Enumerator, w *output.Writer, m string, staleDays int) {
 func runLookup(e *enum.Enumerator, w *output.Writer, spec string, coll *collector) {
 	parts := strings.SplitN(spec, ":", 2)
 	if len(parts) != 2 {
-		log.Fatalf("[-] -T format: <type>:<name>  e.g. user:jdoe")
+		log.Fatalf("%s [-] -T format: <type>:<name>  e.g. user:jdoe", ts())
 	}
 	kind, name := strings.ToLower(parts[0]), parts[1]
 
@@ -471,11 +473,11 @@ func runLookup(e *enum.Enumerator, w *output.Writer, spec string, coll *collecto
 		data, err = e.LookupOU(name)
 		file = "lookup-ou.json"
 	default:
-		log.Fatalf("[-] Unknown -T type: %s (valid: user, computer, group, ou)", kind)
+		log.Fatalf("%s [-] Unknown -T type: %s (valid: user, computer, group, ou)", ts(), kind)
 	}
 
 	if err != nil {
-		log.Printf("[-] Lookup %s: %v", spec, err)
+		log.Printf("%s [-] Lookup %s: %v", ts(), spec, err)
 		return
 	}
 	w.Write(file, data)

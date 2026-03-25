@@ -2,9 +2,16 @@
 package enum
 
 import (
+	"time"
+
 	"spectral/internal/adws"
 	"spectral/internal/opsec"
 )
+
+// ts returns the standardized timestamp prefix for log lines.
+func ts() string {
+	return time.Now().UTC().Format("2006-01-02 15:04:05 UTC --")
+}
 
 // Enumerator holds shared state for all enumeration operations.
 type Enumerator struct {

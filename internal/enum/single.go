@@ -37,7 +37,7 @@ var singleComputerAttrs = append(computerAttrs,
 // LookupUser fetches a single user by sAMAccountName and resolves their groups.
 func (e *Enumerator) LookupUser(sam string) (*SingleResult, error) {
 	if e.verbose {
-		log.Printf("[*] Lookup user: %s", sam)
+		log.Printf("%s [*] Lookup user: %s", ts(), sam)
 	}
 
 	filter := fmt.Sprintf("(&(objectCategory=person)(objectClass=user)(sAMAccountName=%s))",
@@ -61,7 +61,7 @@ func (e *Enumerator) LookupUser(sam string) (*SingleResult, error) {
 // LookupComputer fetches a single computer by sAMAccountName (with or without $).
 func (e *Enumerator) LookupComputer(name string) (*SingleResult, error) {
 	if e.verbose {
-		log.Printf("[*] Lookup computer: %s", name)
+		log.Printf("%s [*] Lookup computer: %s", ts(), name)
 	}
 
 	// Normalise: strip trailing $ if provided, LDAP sam for computers ends in $.
@@ -84,7 +84,7 @@ func (e *Enumerator) LookupComputer(name string) (*SingleResult, error) {
 // LookupGroup fetches a single group by name and resolves its direct members.
 func (e *Enumerator) LookupGroup(name string) (*SingleResult, error) {
 	if e.verbose {
-		log.Printf("[*] Lookup group: %s", name)
+		log.Printf("%s [*] Lookup group: %s", ts(), name)
 	}
 
 	filter := fmt.Sprintf("(&(objectCategory=group)(sAMAccountName=%s))", escapeLDAP(name))
@@ -102,7 +102,7 @@ func (e *Enumerator) LookupGroup(name string) (*SingleResult, error) {
 	// Resolve each member DN to a lightweight object.
 	memberDNs := attrSlice(objs[0], "member")
 	if e.verbose {
-		log.Printf("[*]   members: %d", len(memberDNs))
+		log.Printf("%s [*]   members: %d", ts(), len(memberDNs))
 	}
 
 	for _, dn := range memberDNs {
@@ -123,7 +123,7 @@ func (e *Enumerator) LookupGroup(name string) (*SingleResult, error) {
 // LookupOU enumerates all direct children of an OU distinguished name.
 func (e *Enumerator) LookupOU(ouDN string) ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Lookup OU: %s", ouDN)
+		log.Printf("%s [*] Lookup OU: %s", ts(), ouDN)
 	}
 
 	// Pull all object types one level deep within the OU.

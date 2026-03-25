@@ -139,7 +139,7 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 	// CN=Enrollment Services container — some DCs return an LDAP referral
 	// when the base DN points deep into the Configuration NC via ADWS.
 	if e.verbose {
-		log.Printf("[*] ADCS: enterprise CAs")
+		log.Printf("%s [*] ADCS: enterprise CAs", ts())
 	}
 	caObjs, err := e.client.Query(
 		pkiBase,
@@ -148,21 +148,21 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 		adws.ScopeSubtree,
 	)
 	if err != nil {
-		log.Printf("[*] ADCS: enterprise CAs unavailable")
+		log.Printf("%s [*] ADCS: enterprise CAs unavailable", ts())
 	}
 	for _, obj := range caObjs {
 		templates := attrSlice(obj, "certificateTemplates")
 		result.CAs = append(result.CAs, CAInfo{Object: obj, Templates: templates})
 	}
 	if e.verbose {
-		log.Printf("[+] ADCS: %d enterprise CA(s)", len(result.CAs))
+		log.Printf("%s [+] ADCS: %d enterprise CA(s)", ts(), len(result.CAs))
 	}
 
 	e.pace.BetweenRequests()
 
 	// 2. Certificate Templates
 	if e.verbose {
-		log.Printf("[*] ADCS: certificate templates")
+		log.Printf("%s [*] ADCS: certificate templates", ts())
 	}
 	tmplObjs, err := e.client.Query(
 		pkiBase,
@@ -177,14 +177,14 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 		result.Templates = append(result.Templates, parseTemplate(obj))
 	}
 	if e.verbose {
-		log.Printf("[+] ADCS: %d template(s)", len(result.Templates))
+		log.Printf("%s [+] ADCS: %d template(s)", ts(), len(result.Templates))
 	}
 
 	e.pace.BetweenRequests()
 
 	// 3. Root CAs
 	if e.verbose {
-		log.Printf("[*] ADCS: root CAs")
+		log.Printf("%s [*] ADCS: root CAs", ts())
 	}
 	result.RootCAs, err = e.client.Query(
 		"CN=Certification Authorities,"+pkiBase,
@@ -193,14 +193,14 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 		adws.ScopeOneLevel,
 	)
 	if err != nil {
-		log.Printf("[*] ADCS: root CAs unavailable")
+		log.Printf("%s [*] ADCS: root CAs unavailable", ts())
 	}
 
 	e.pace.BetweenRequests()
 
 	// 4. NTAuth store
 	if e.verbose {
-		log.Printf("[*] ADCS: NTAuth store")
+		log.Printf("%s [*] ADCS: NTAuth store", ts())
 	}
 	result.NTAuth, err = e.client.Query(
 		"CN=NTAuthCertificates,"+pkiBase,
@@ -209,13 +209,13 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 		adws.ScopeBase,
 	)
 	if err != nil {
-		log.Printf("[*] ADCS: NTAuth store unavailable")
+		log.Printf("%s [*] ADCS: NTAuth store unavailable", ts())
 	}
 
 	// 5. Client-side ESC analysis
 	result.Findings = analyseESC(result)
 	if e.verbose {
-		log.Printf("[+] ADCS: %d finding(s)", len(result.Findings))
+		log.Printf("%s [+] ADCS: %d finding(s)", ts(), len(result.Findings))
 	}
 
 	return result, nil

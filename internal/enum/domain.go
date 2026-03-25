@@ -14,7 +14,7 @@ type DomainResult struct {
 // Domain collects domain and forest info via MS-ADCAP.
 func (e *Enumerator) Domain() (*DomainResult, error) {
 	if e.verbose {
-		log.Printf("[*] Enumerating domain info")
+		log.Printf("%s [*] Enumerating domain info", ts())
 	}
 
 	domain, err := e.client.GetDomain()

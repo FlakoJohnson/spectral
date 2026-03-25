@@ -12,7 +12,7 @@ const computerFilter = "(objectClass=computer)"
 // Computers enumerates all computer objects in the domain.
 func (e *Enumerator) Computers() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Enumerating computers")
+		log.Printf("%s [*] Enumerating computers", ts())
 	}
 
 	var results []adws.ADObject
@@ -26,7 +26,7 @@ func (e *Enumerator) Computers() ([]adws.ADObject, error) {
 		func(batch []adws.ADObject) error {
 			results = append(results, batch...)
 			if e.verbose {
-				log.Printf("[*]   computers: %d", len(results))
+				log.Printf("%s [*]   computers: %d", ts(), len(results))
 			}
 			e.pace.BetweenRequests()
 			return nil
@@ -37,7 +37,7 @@ func (e *Enumerator) Computers() ([]adws.ADObject, error) {
 	}
 
 	if e.verbose {
-		log.Printf("[+] Computers: %d", len(results))
+		log.Printf("%s [+] Computers: %d", ts(), len(results))
 	}
 	return results, nil
 }

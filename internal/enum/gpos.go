@@ -13,10 +13,9 @@ const gpoFilter = "(objectClass=groupPolicyContainer)"
 // GPOs enumerates Group Policy Objects.
 func (e *Enumerator) GPOs() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Enumerating GPOs")
+		log.Printf("%s [*] Enumerating GPOs", ts())
 	}
 
-	// Scope to the Policies container to reduce query breadth.
 	gpoDN := "CN=Policies,CN=System," + e.baseDN
 
 	var results []adws.ADObject
@@ -34,9 +33,8 @@ func (e *Enumerator) GPOs() ([]adws.ADObject, error) {
 		},
 	)
 	if err != nil {
-		// Fall back to full domain scope if the container isn't accessible.
 		if e.verbose {
-			log.Printf("[*] GPO container fallback to domain scope")
+			log.Printf("%s [*] GPO container fallback to domain scope", ts())
 		}
 		results = nil
 		err = e.client.QueryBatched(
@@ -57,7 +55,7 @@ func (e *Enumerator) GPOs() ([]adws.ADObject, error) {
 	}
 
 	if e.verbose {
-		log.Printf("[+] GPOs: %d", len(results))
+		log.Printf("%s [+] GPOs: %d", ts(), len(results))
 	}
 	return results, nil
 }

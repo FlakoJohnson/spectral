@@ -20,7 +20,7 @@ const trustFilter = "(objectClass=trustedDomain)"
 // Scoped to CN=System to avoid a full domain sweep.
 func (e *Enumerator) Trusts() ([]adws.ADObject, error) {
 	if e.verbose {
-		log.Printf("[*] Enumerating trusts")
+		log.Printf("%s [*] Enumerating trusts", ts())
 	}
 
 	systemDN := "CN=System," + e.baseDN
@@ -44,7 +44,7 @@ func (e *Enumerator) Trusts() ([]adws.ADObject, error) {
 	}
 
 	if e.verbose {
-		log.Printf("[+] Trusts: %d", len(results))
+		log.Printf("%s [+] Trusts: %d", ts(), len(results))
 	}
 	return results, nil
 }
