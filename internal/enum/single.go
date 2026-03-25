@@ -26,12 +26,13 @@ var singleUserAttrs = append(userAttrs,
 )
 
 // singleComputerAttrs pulls everything useful about a computer.
+// Note: LAPS attributes (ms-Mcs-AdmPwd, msLAPS-Password) are omitted here
+// because ADWS rejects the entire query if the attribute doesn't exist in
+// the domain's schema. Use -m laps for LAPS enumeration instead.
 var singleComputerAttrs = append(computerAttrs,
 	"msDS-AllowedToDelegateTo",
 	"msDS-KeyCredentialLink",
 	"msDS-AllowedToActOnBehalfOfOtherIdentity",
-	"ms-Mcs-AdmPwd",
-	"ms-Mcs-AdmPwdExpirationTime",
 )
 
 // LookupUser fetches a single user by sAMAccountName and resolves their groups.
