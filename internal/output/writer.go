@@ -77,8 +77,8 @@ func (w *Writer) Write(name string, data interface{}) {
 	}
 
 	if w.verbose {
-		ts := time.Now().Format("15:04:05")
-		log.Printf("[%s] [+] Wrote %s (%s)", ts, path, humanSize(len(b)))
+		ts := time.Now().UTC().Format("2006-01-02 15:04:05 UTC --")
+		log.Printf("%s [+] Wrote %s (%s)", ts, path, humanSize(len(b)))
 	}
 }
 

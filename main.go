@@ -552,7 +552,7 @@ func sanitise(s string) string {
 }
 
 func ts() string {
-	return time.Now().Format("15:04:05")
+	return time.Now().UTC().Format("2006-01-02 15:04:05 UTC --")
 }
 
 func contains(ss []string, s string) bool {

@@ -21,7 +21,7 @@ func PrintBanner() {
 
 // PrintTargetInfo displays the engagement context after the banner.
 func PrintTargetInfo(target, domain, user, outDir string) {
-	ts := time.Now().Format("15:04:05")
+	ts := time.Now().UTC().Format("2006-01-02 15:04:05 UTC")
 	fmt.Printf("  %s%sTarget%s  : %s\n", bold, white, reset, target)
 	fmt.Printf("  %s%sDomain%s  : %s\n", bold, white, reset, domain)
 	fmt.Printf("  %s%sUser%s    : %s\n", bold, white, reset, user)
