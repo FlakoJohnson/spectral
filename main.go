@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"flag"
 	"fmt"
 	"log"
@@ -148,20 +147,11 @@ func main() {
 		*outDir = filePrefix
 	}
 
-	// In stealth mode, use a generic output dir name
-	if stealth {
-		h := sha256.Sum256([]byte(time.Now().String()))
-		*outDir = fmt.Sprintf("out_%x", h[:6])
-	}
-
 	if err := os.MkdirAll(*outDir, 0700); err != nil {
 		log.Fatalf("%s [-] Output dir: %v", ts(), err)
 	}
 
 	w := output.NewWriter(*outDir, filePrefix, !*quiet)
-	if stealth {
-		w.SetObfuscate(true)
-	}
 
 	// Print target info after banner
 	if !*quiet {
