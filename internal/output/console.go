@@ -12,14 +12,16 @@ import (
 
 // ANSI colour codes.
 const (
-	reset  = "\033[0m"
-	bold   = "\033[1m"
-	red    = "\033[31m"
-	yellow = "\033[33m"
-	green  = "\033[32m"
-	cyan   = "\033[36m"
-	grey   = "\033[90m"
-	white  = "\033[97m"
+	reset     = "\033[0m"
+	bold      = "\033[1m"
+	red       = "\033[31m"
+	yellow    = "\033[33m"
+	green     = "\033[32m"
+	cyan      = "\033[36m"
+	grey      = "\033[90m"
+	white     = "\033[97m"
+	limeGreen = "\033[38;5;118m"
+	purple    = "\033[38;5;135m"
 )
 
 // PrintADCS writes a human-readable ADCS report to stdout.

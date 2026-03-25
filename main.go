@@ -113,12 +113,9 @@ func main() {
 		}
 	}
 
-	// Stealth mode implies quiet
 	if *stealth {
-		*quiet = true
-	}
-
-	if !*stealth {
+		output.PrintBannerStealth()
+	} else {
 		output.PrintBanner()
 	}
 
@@ -157,7 +154,7 @@ func main() {
 
 	// Print target info after banner
 	if !*quiet {
-		output.PrintTargetInfo(*target, *domain, *username, *outDir)
+		output.PrintTargetInfo(*target, *domain, *username, *outDir, *stealth)
 	}
 	modes := expandModes(*mode)
 
