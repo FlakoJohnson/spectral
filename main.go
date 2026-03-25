@@ -17,6 +17,12 @@ import (
 	"spectral/internal/recon"
 )
 
+const (
+	reset = "\033[0m"
+	bold  = "\033[1m"
+	red   = "\033[31m"
+)
+
 func usage() {
 	fmt.Fprintf(os.Stderr, `Usage: %s [options]
 
@@ -119,6 +125,10 @@ func main() {
 		output.PrintBannerStealth()
 	} else {
 		output.PrintBanner()
+		fmt.Printf("  %s%s[!] WARNING: Running without stealth mode (-s). Queries may trigger MDI alerts.%s\n",
+			bold, red, reset)
+		fmt.Printf("  %s%s    Use -s to enable filter randomization and client-side SPN filtering.%s\n\n",
+			bold, red, reset)
 	}
 
 	if *target == "" {
