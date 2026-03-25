@@ -66,11 +66,10 @@ Output & pacing:
   -x           Debug SOAP XML
   -bh          Also write BloodHound CE zip (users/computers/groups/gpos/trusts)
 
-Stealth:
-  -s           Stealth mode: randomize filters, attrs, batch sizes, query order,
-               suppress banner, obfuscate output filenames. Implies -q.
-  -Bmin int    Minimum batch size for stealth randomization (default: 75)
-  -Bmax int    Maximum batch size for stealth randomization (default: 125)
+Stealth (enabled by default):
+  --no-stealth Disable stealth features (faster but noisier — may trigger MDI)
+  -Bmin int    Minimum batch size for randomization (default: 75)
+  -Bmax int    Maximum batch size for randomization (default: 125)
 
 Proxy:
   -proxy string  SOCKS5 proxy URL  (e.g. socks5://127.0.0.1:1080)
@@ -101,7 +100,7 @@ func main() {
 		debugXML  = flag.Bool("x", false, "")
 		bhOut     = flag.Bool("bh", false, "")
 		proxyURL  = flag.String("proxy", "", "")
-		stealth   = flag.Bool("s", false, "")
+		noStealth = flag.Bool("no-stealth", false, "")
 		batchMin  = flag.Int("Bmin", 75, "")
 		batchMax  = flag.Int("Bmax", 125, "")
 	)
@@ -121,13 +120,13 @@ func main() {
 		}
 	}
 
-	if *stealth {
+	stealth := !*noStealth
+
+	if stealth {
 		output.PrintBannerStealth()
 	} else {
 		output.PrintBanner()
-		fmt.Printf("  %s%s[!] WARNING: Running without stealth mode (-s). Queries may trigger MDI alerts.%s\n",
-			bold, red, reset)
-		fmt.Printf("  %s%s    Use -s to enable filter randomization and client-side SPN filtering.%s\n\n",
+		fmt.Printf("  %s%s[!] WARNING: Stealth disabled (--no-stealth). Queries may trigger MDI alerts.%s\n\n",
 			bold, red, reset)
 	}
 
@@ -150,7 +149,7 @@ func main() {
 	}
 
 	// In stealth mode, use a generic output dir name
-	if *stealth {
+	if stealth {
 		h := sha256.Sum256([]byte(time.Now().String()))
 		*outDir = fmt.Sprintf("out_%x", h[:6])
 	}
@@ -160,18 +159,18 @@ func main() {
 	}
 
 	w := output.NewWriter(*outDir, filePrefix, !*quiet)
-	if *stealth {
+	if stealth {
 		w.SetObfuscate(true)
 	}
 
 	// Print target info after banner
 	if !*quiet {
-		output.PrintTargetInfo(*target, *domain, *username, *outDir, *stealth)
+		output.PrintTargetInfo(*target, *domain, *username, *outDir, stealth)
 	}
 	modes := expandModes(*mode)
 
 	// Stealth: randomize enumeration order to avoid behavioral fingerprinting
-	if *stealth {
+	if stealth {
 		// Separate rootdse (must run first) from other modes
 		hasRootDSE := contains(modes, "rootdse")
 		modes = filterOut(modes, "rootdse")
@@ -234,7 +233,7 @@ func main() {
 	)
 
 	// Stealth: random delay before ADWS connection (1-5s)
-	if *stealth {
+	if stealth {
 		delay := time.Duration(1000+rand.Intn(4000)) * time.Millisecond
 		time.Sleep(delay)
 	}
@@ -257,7 +256,7 @@ func main() {
 	}
 
 	var e *enum.Enumerator
-	if *stealth {
+	if stealth {
 		e = enum.NewStealth(client, pace, *batchMin, *batchMax, *baseDN, !*quiet)
 	} else {
 		e = enum.New(client, pace, *batch, *baseDN, !*quiet)
