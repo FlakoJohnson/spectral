@@ -138,8 +138,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Build evidence-keeping prefix: IP_YYYYMMDD
-	dateStr := time.Now().Format("20060102")
+	// Build evidence-keeping prefix: IP_YYYYMMDD_HHMMSS
+	dateStr := time.Now().Format("20060102_150405")
 	filePrefix := fmt.Sprintf("%s_%s", *target, dateStr)
 
 	// Output directory: <base>/<IP>_<YYYYMMDD>/
