@@ -1,3 +1,13 @@
 spectral
 *.json
 go.sum
+
+# Test/scan output
+*.zip
+*_output/
+goad_*/
+stealth_*/
+stress*/
+out_*/
+10.*/
+192.*/
