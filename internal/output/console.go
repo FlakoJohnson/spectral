@@ -203,6 +203,58 @@ func PrintGroups(groups []adws.ADObject) {
 	fmt.Println()
 }
 
+// PrintOUs prints a formatted OU listing to stdout.
+func PrintOUs(ous []adws.ADObject) {
+	fmt.Println()
+	header(fmt.Sprintf("Organizational Units  (%d)", len(ous)))
+
+	const (
+		wName = 40
+		wGPO  = 10
+	)
+
+	fmt.Printf("  %s%-*s  %-*s  %s%s\n",
+		bold+white,
+		wName, "Name",
+		wGPO, "GPOs",
+		"distinguishedName",
+		reset,
+	)
+	fmt.Printf("  %s%s%s\n", grey,
+		strings.Repeat("─", wName+2+wGPO+2+80), reset)
+
+	for _, ou := range ous {
+		name := enum.AttrStr(ou, "name")
+		dn := enum.AttrStr(ou, "distinguishedName")
+		gpLink := enum.AttrStr(ou, "gPLink")
+		desc := enum.AttrStr(ou, "description")
+
+		// Count linked GPOs
+		gpoCount := 0
+		if gpLink != "" {
+			gpoCount = strings.Count(gpLink, "[LDAP://")
+		}
+
+		gpoStr := ""
+		if gpoCount > 0 {
+			gpoStr = fmt.Sprintf("%s%d%s", yellow, gpoCount, reset)
+		}
+
+		descStr := ""
+		if desc != "" {
+			descStr = fmt.Sprintf(" %s(%s)%s", grey, desc, reset)
+		}
+
+		fmt.Printf("  %-*s  %-*s  %s%s%s%s\n",
+			wName, name,
+			wGPO, gpoStr,
+			grey, dn, reset,
+			descStr,
+		)
+	}
+	fmt.Println()
+}
+
 // PrintUserLookup prints a user's details and group memberships to stdout.
 func PrintUserLookup(result *enum.SingleResult) {
 	sam := enum.AttrStr(result.Object, "sAMAccountName")

@@ -39,7 +39,7 @@ Connection:
 Enumeration:
   -m  string   Modes, comma-separated
                Unauthenticated: rootdse
-               Sweep:    users, computers, groups, gpos, trusts, domain
+               Sweep:    users, computers, groups, gpos, trusts, ous, domain
                Targeted: kerberoastable, asreproast, unconstrained,
                          constrained, rbcd, admincount, shadowcreds,
                          laps, pwdnoexpire, stale, fgpp, adcs
@@ -389,6 +389,12 @@ func runMode(e *enum.Enumerator, w *output.Writer, m string, staleDays int) {
 		res.data, res.err = e.GPOs()
 	case "trusts":
 		res.data, res.err = e.Trusts()
+	case "ous":
+		data, err := e.OUs()
+		res.data, res.err = data, err
+		if err == nil {
+			output.PrintOUs(data)
+		}
 	case "kerberoastable":
 		res.data, res.err = e.Kerberoastable()
 	case "asreproast":
@@ -502,7 +508,7 @@ func expandModes(m string) []string {
 	if m == "" {
 		return nil
 	}
-	sweepAll := []string{"domain", "users", "computers", "groups", "gpos", "trusts"}
+	sweepAll := []string{"domain", "users", "computers", "groups", "gpos", "trusts", "ous"}
 	targetedAll := []string{
 		"kerberoastable", "asreproast", "unconstrained", "constrained",
 		"rbcd", "admincount", "shadowcreds", "laps", "pwdnoexpire", "stale", "fgpp", "adcs",
