@@ -23,7 +23,7 @@ func (e *Enumerator) Trusts() ([]adws.ADObject, error) {
 		log.Printf("%s [*] Enumerating trusts", ts())
 	}
 
-	systemDN := "CN=System," + e.baseDN
+	systemDN := "CN=System," + e.domainDN
 
 	var results []adws.ADObject
 

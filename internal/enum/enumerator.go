@@ -19,27 +19,29 @@ type Enumerator struct {
 	pace     *opsec.Pacer
 	batchMin int
 	batchMax int
-	baseDN   string
+	baseDN   string // scoped base DN (may be overridden by -b)
+	domainDN string // always the domain root DN (DC=...,DC=...)
 	target   string // DC IP/hostname for DNS resolution
 	verbose  bool
 	stealth  bool
 }
 
 // New creates an Enumerator.
-func New(client *adws.Client, pace *opsec.Pacer, batchSize int, baseDN, target string, verbose bool) *Enumerator {
+func New(client *adws.Client, pace *opsec.Pacer, batchSize int, baseDN, domainDN, target string, verbose bool) *Enumerator {
 	return &Enumerator{
 		client:   client,
 		pace:     pace,
 		batchMin: batchSize,
 		batchMax: batchSize,
 		baseDN:   baseDN,
+		domainDN: domainDN,
 		target:   target,
 		verbose:  verbose,
 	}
 }
 
 // NewStealth creates an Enumerator with stealth features enabled.
-func NewStealth(client *adws.Client, pace *opsec.Pacer, batchMin, batchMax int, baseDN, target string, verbose bool) *Enumerator {
+func NewStealth(client *adws.Client, pace *opsec.Pacer, batchMin, batchMax int, baseDN, domainDN, target string, verbose bool) *Enumerator {
 	return &Enumerator{
 		client:   client,
 		pace:     pace,
@@ -47,6 +49,7 @@ func NewStealth(client *adws.Client, pace *opsec.Pacer, batchMin, batchMax int, 
 		batchMax: batchMax,
 		target:   target,
 		baseDN:   baseDN,
+		domainDN: domainDN,
 		verbose:  verbose,
 		stealth:  true,
 	}

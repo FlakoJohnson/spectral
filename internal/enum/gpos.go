@@ -16,7 +16,7 @@ func (e *Enumerator) GPOs() ([]adws.ADObject, error) {
 		log.Printf("%s [*] Enumerating GPOs", ts())
 	}
 
-	gpoDN := "CN=Policies,CN=System," + e.baseDN
+	gpoDN := "CN=Policies,CN=System," + e.domainDN
 
 	var results []adws.ADObject
 
@@ -38,7 +38,7 @@ func (e *Enumerator) GPOs() ([]adws.ADObject, error) {
 		}
 		results = nil
 		err = e.client.QueryBatched(
-			e.baseDN,
+			e.domainDN,
 			e.prepFilter(gpoFilter),
 			e.prepAttrs(gpoAttrs),
 			adws.ScopeSubtree,

@@ -150,7 +150,7 @@ var rootCAAttrs = []string{
 // lookups that match normal admin enumeration patterns.
 func (e *Enumerator) ADCS() (*ADCSResult, error) {
 	// Try each possible Configuration NC (handles child domains in a forest)
-	configCandidates := forestConfigNCs(e.baseDN)
+	configCandidates := forestConfigNCs(e.domainDN)
 	var configDN, pkiBase string
 	var caObjs []adws.ADObject
 	var err error
@@ -181,7 +181,7 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 	}
 	if configDN == "" {
 		// All candidates failed — use default and let it fail gracefully
-		configDN = configNC(e.baseDN)
+		configDN = configNC(e.domainDN)
 		pkiBase = "CN=Public Key Services,CN=Services," + configDN
 		log.Printf("%s [*] ADCS: enterprise CAs unavailable", ts())
 	}

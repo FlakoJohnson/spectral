@@ -241,15 +241,16 @@ func main() {
 		log.Printf("%s [+] Connected to %s:%s via ADWS", ts(), *target, *port)
 	}
 
+	domainDN := domainToBaseDN(*domain)
 	if *baseDN == "" {
-		*baseDN = domainToBaseDN(*domain)
+		*baseDN = domainDN
 	}
 
 	var e *enum.Enumerator
 	if stealth {
-		e = enum.NewStealth(client, pace, *batchMin, *batchMax, *baseDN, *target, !*quiet)
+		e = enum.NewStealth(client, pace, *batchMin, *batchMax, *baseDN, domainDN, *target, !*quiet)
 	} else {
-		e = enum.New(client, pace, *batch, *baseDN, *target, !*quiet)
+		e = enum.New(client, pace, *batch, *baseDN, domainDN, *target, !*quiet)
 	}
 
 	// collector holds sweep results for optional BH output.

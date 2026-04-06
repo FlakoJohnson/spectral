@@ -408,7 +408,7 @@ func (e *Enumerator) FineGrainedPasswordPolicies() ([]adws.ADObject, error) {
 		log.Printf("%s [*] Fine-grained password policies", ts())
 	}
 
-	psoDN := "CN=Password Settings Container,CN=System," + e.baseDN
+	psoDN := "CN=Password Settings Container,CN=System," + e.domainDN
 	filter := "(objectClass=msDS-PasswordSettings)"
 
 	return e.runTargetedScoped(psoDN, filter, e.prepAttrs(fgppAttrs), adws.ScopeOneLevel, "fgpp")
