@@ -299,8 +299,16 @@ func (c *BHConverter) ConvertUsers(objects []adws.ADObject) []bhUser {
 		uac := parseInt64(enum.AttrStr(obj, "userAccountControl"))
 		sam := enum.AttrStr(obj, "sAMAccountName")
 
+		// Build PrimaryGroupSID: domainSID + "-" + primaryGroupID
+		pgid := enum.AttrStr(obj, "primaryGroupID")
+		primaryGroupSID := ""
+		if pgid != "" && c.domainSID != "" {
+			primaryGroupSID = c.domainSID + "-" + pgid
+		}
+
 		u := bhUser{
-			ObjectIdentifier: sid,
+			ObjectIdentifier:  sid,
+			PrimaryGroupSID:   primaryGroupSID,
 			AllowedToDelegate: enum.AttrSliceStr(obj, "msDS-AllowedToDelegateTo"),
 			HasSIDHistory:     []string{},
 			SPNTargets:        []bhSPNTarget{},
@@ -349,8 +357,15 @@ func (c *BHConverter) ConvertComputers(objects []adws.ADObject) []bhComputer {
 			name = strings.TrimSuffix(strings.ToUpper(sam), "$")
 		}
 
+		pgid := enum.AttrStr(obj, "primaryGroupID")
+		compPGSID := ""
+		if pgid != "" && c.domainSID != "" {
+			compPGSID = c.domainSID + "-" + pgid
+		}
+
 		comp := bhComputer{
 			ObjectIdentifier:   sid,
+			PrimaryGroupSID:    compPGSID,
 			AllowedToDelegate:  enum.AttrSliceStr(obj, "msDS-AllowedToDelegateTo"),
 			AllowedToAct:       []bhTypedID{},
 			HasSIDHistory:      []string{},
