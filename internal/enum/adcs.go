@@ -219,6 +219,19 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 		log.Printf("%s [*] ADCS: NTAuth store unavailable", ts())
 	}
 
+	// Check if SDs were returned (requires read access to nTSecurityDescriptor)
+	sdCount := 0
+	for _, t := range result.Templates {
+		if t.ACL != nil {
+			sdCount++
+		}
+	}
+	if sdCount > 0 {
+		log.Printf("%s [+] ADCS: parsed ACLs on %d/%d templates", ts(), sdCount, len(result.Templates))
+	} else if len(result.Templates) > 0 {
+		log.Printf("%s [*] ADCS: nTSecurityDescriptor not readable (need privileged account for enrollment ACLs)", ts())
+	}
+
 	// 5. Client-side ESC analysis
 	result.Findings = analyseESC(result)
 	if e.verbose {
