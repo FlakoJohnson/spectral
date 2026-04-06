@@ -196,12 +196,12 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 			if len(ca.WebEndpoints) > 0 {
 				ntlmCount := 0
 				for _, ep := range ca.WebEndpoints {
-					if ep.NTLM {
+					if ep.NTLM || ep.Negotiate {
 						ntlmCount++
 					}
 				}
 				if ntlmCount > 0 {
-					log.Printf("%s [!] ADCS: %d HTTP endpoint(s) with NTLM on %s (ESC8)", ts(), ntlmCount, hostname)
+					log.Printf("%s [!] ADCS: %d HTTP endpoint(s) with NTLM/Negotiate on %s (ESC8)", ts(), ntlmCount, hostname)
 				} else {
 					log.Printf("%s [+] ADCS: %d HTTP endpoint(s) on %s (no NTLM)", ts(), len(ca.WebEndpoints), hostname)
 				}
@@ -558,12 +558,18 @@ func analyseESC(r *ADCSResult, domainSID string) []ESCFinding {
 	for _, ca := range r.CAs {
 		caName := attrStr(ca.Object, "cn")
 		for _, ep := range ca.WebEndpoints {
-			if ep.NTLM {
+			if ep.NTLM || ep.Negotiate {
+				authType := "NTLM"
+				if ep.Negotiate && !ep.NTLM {
+					authType = "Negotiate (NTLM fallback)"
+				} else if ep.Negotiate && ep.NTLM {
+					authType = "NTLM + Negotiate"
+				}
 				findings = append(findings, ESCFinding{
 					ESC:         "ESC8",
 					CA:          caName,
 					Risk:        "CRITICAL",
-					Description: fmt.Sprintf("CA exposes HTTP enrollment at %s with NTLM auth. Relay NTLM authentication to request certificates as the relayed user.", ep.URL),
+					Description: fmt.Sprintf("CA exposes HTTP enrollment at %s with %s auth. Relay NTLM authentication to request certificates as the relayed user.", ep.URL, authType),
 					Note:        "Use ntlmrelayx.py --target " + ep.URL + " --adcs --template <template>",
 				})
 			}
