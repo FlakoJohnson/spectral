@@ -12,6 +12,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -192,7 +193,7 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 		hostname := attrStr(obj, "dNSHostName")
 		if hostname != "" {
 			log.Printf("%s [*] ADCS: probing web enrollment on %s", ts(), hostname)
-			ca.WebEndpoints = probeWebEnrollment(hostname)
+			ca.WebEndpoints = probeWebEnrollment(hostname, e.target)
 			if len(ca.WebEndpoints) > 0 {
 				ntlmCount := 0
 				for _, ep := range ca.WebEndpoints {
@@ -616,7 +617,7 @@ func analyseESC(r *ADCSResult, domainSID string) []ESCFinding {
 
 // probeWebEnrollment checks if a CA exposes HTTP-based enrollment endpoints
 // that accept NTLM authentication (ESC8 relay target).
-func probeWebEnrollment(hostname string) []WebEndpoint {
+func probeWebEnrollment(hostname, dcIP string) []WebEndpoint {
 	if hostname == "" {
 		return nil
 	}
@@ -627,7 +628,7 @@ func probeWebEnrollment(hostname string) []WebEndpoint {
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse // don't follow redirects
+			return http.ErrUseLastResponse
 		},
 	}
 
@@ -638,42 +639,127 @@ func probeWebEnrollment(hostname string) []WebEndpoint {
 		"/CES_Kerberos/service.svc",
 	}
 
+	// Try hostname first, then resolved IP if hostname fails
+	hosts := []string{hostname}
+	if dcIP != "" {
+		// Resolve hostname via DC as DNS server
+		resolved := resolveViaDC(hostname, dcIP)
+		if resolved != "" && resolved != hostname {
+			hosts = append(hosts, resolved)
+		}
+	}
+
 	var results []WebEndpoint
-	for _, scheme := range []string{"http", "https"} {
-		for _, ep := range endpoints {
-			url := fmt.Sprintf("%s://%s%s", scheme, hostname, ep)
-			resp, err := client.Get(url)
-			if err != nil {
-				continue
-			}
-			resp.Body.Close()
+	for _, host := range hosts {
+		for _, scheme := range []string{"http", "https"} {
+			for _, ep := range endpoints {
+				probeURL := fmt.Sprintf("%s://%s%s", scheme, host, ep)
+				resp, err := client.Get(probeURL)
+				if err != nil {
+					continue
+				}
+				resp.Body.Close()
 
-			we := WebEndpoint{
-				URL:    url,
-				Status: resp.StatusCode,
-			}
+				// Use hostname in the URL for display (not IP)
+				displayURL := fmt.Sprintf("%s://%s%s", scheme, hostname, ep)
 
-			// Check WWW-Authenticate header for NTLM/Negotiate
-			authHeader := resp.Header.Get("WWW-Authenticate")
-			if authHeader == "" && resp.StatusCode == 401 {
-				// Some servers only return auth header on 401
-				we.NTLM = false
-			}
-			if strings.Contains(authHeader, "NTLM") {
-				we.NTLM = true
-			}
-			if strings.Contains(authHeader, "Negotiate") {
-				we.Negotiate = true
-			}
+				we := WebEndpoint{
+					URL:    displayURL,
+					Status: resp.StatusCode,
+				}
 
-			// Interesting if reachable (200, 401, 403)
-			if resp.StatusCode == 200 || resp.StatusCode == 401 || resp.StatusCode == 403 {
-				results = append(results, we)
+				authHeader := resp.Header.Get("WWW-Authenticate")
+				if strings.Contains(authHeader, "NTLM") {
+					we.NTLM = true
+				}
+				if strings.Contains(authHeader, "Negotiate") {
+					we.Negotiate = true
+				}
+
+				if resp.StatusCode == 200 || resp.StatusCode == 401 || resp.StatusCode == 403 {
+					// Dedupe by display URL
+					found := false
+					for _, existing := range results {
+						if existing.URL == displayURL {
+							found = true
+							break
+						}
+					}
+					if !found {
+						results = append(results, we)
+					}
+				}
 			}
+		}
+		// If we got results from hostname, don't try IP
+		if len(results) > 0 {
+			break
 		}
 	}
 
 	return results
+}
+
+// resolveViaDC resolves a hostname using the DC as DNS server via raw UDP.
+func resolveViaDC(hostname, dcIP string) string {
+	conn, err := net.DialTimeout("udp", dcIP+":53", 3*time.Second)
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+
+	// Build minimal DNS A query
+	query := []byte{
+		0x00, 0x01, // ID
+		0x01, 0x00, // Flags: standard query
+		0x00, 0x01, // Questions: 1
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Answers/Authority/Additional: 0
+	}
+	for _, label := range strings.Split(hostname, ".") {
+		query = append(query, byte(len(label)))
+		query = append(query, []byte(label)...)
+	}
+	query = append(query, 0x00, 0x00, 0x01, 0x00, 0x01) // null + Type A + Class IN
+
+	conn.SetDeadline(time.Now().Add(3 * time.Second))
+	conn.Write(query)
+
+	buf := make([]byte, 512)
+	n, err := conn.Read(buf)
+	if err != nil || n < 12 {
+		return ""
+	}
+
+	// Skip header (12) + question section
+	offset := 12
+	for offset < n && buf[offset] != 0 {
+		offset += int(buf[offset]) + 1
+	}
+	offset += 5 // null + type(2) + class(2)
+
+	// Parse answers
+	ansCount := int(buf[6])<<8 | int(buf[7])
+	for i := 0; i < ansCount && offset < n-10; i++ {
+		if buf[offset]&0xC0 == 0xC0 {
+			offset += 2
+		} else {
+			for offset < n && buf[offset] != 0 {
+				offset += int(buf[offset]) + 1
+			}
+			offset++
+		}
+		if offset+10 > n {
+			break
+		}
+		atype := int(buf[offset])<<8 | int(buf[offset+1])
+		rdlen := int(buf[offset+8])<<8 | int(buf[offset+9])
+		offset += 10
+		if atype == 1 && rdlen == 4 && offset+4 <= n {
+			return fmt.Sprintf("%d.%d.%d.%d", buf[offset], buf[offset+1], buf[offset+2], buf[offset+3])
+		}
+		offset += rdlen
+	}
+	return ""
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────

@@ -20,29 +20,32 @@ type Enumerator struct {
 	batchMin int
 	batchMax int
 	baseDN   string
+	target   string // DC IP/hostname for DNS resolution
 	verbose  bool
-	stealth  bool // enables filter obfuscation, attr shuffling, batch randomization
+	stealth  bool
 }
 
 // New creates an Enumerator.
-func New(client *adws.Client, pace *opsec.Pacer, batchSize int, baseDN string, verbose bool) *Enumerator {
+func New(client *adws.Client, pace *opsec.Pacer, batchSize int, baseDN, target string, verbose bool) *Enumerator {
 	return &Enumerator{
 		client:   client,
 		pace:     pace,
 		batchMin: batchSize,
 		batchMax: batchSize,
 		baseDN:   baseDN,
+		target:   target,
 		verbose:  verbose,
 	}
 }
 
 // NewStealth creates an Enumerator with stealth features enabled.
-func NewStealth(client *adws.Client, pace *opsec.Pacer, batchMin, batchMax int, baseDN string, verbose bool) *Enumerator {
+func NewStealth(client *adws.Client, pace *opsec.Pacer, batchMin, batchMax int, baseDN, target string, verbose bool) *Enumerator {
 	return &Enumerator{
 		client:   client,
 		pace:     pace,
 		batchMin: batchMin,
 		batchMax: batchMax,
+		target:   target,
 		baseDN:   baseDN,
 		verbose:  verbose,
 		stealth:  true,

@@ -247,9 +247,9 @@ func main() {
 
 	var e *enum.Enumerator
 	if stealth {
-		e = enum.NewStealth(client, pace, *batchMin, *batchMax, *baseDN, !*quiet)
+		e = enum.NewStealth(client, pace, *batchMin, *batchMax, *baseDN, *target, !*quiet)
 	} else {
-		e = enum.New(client, pace, *batch, *baseDN, !*quiet)
+		e = enum.New(client, pace, *batch, *baseDN, *target, !*quiet)
 	}
 
 	// collector holds sweep results for optional BH output.
