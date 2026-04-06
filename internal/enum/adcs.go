@@ -67,6 +67,13 @@ type TemplateInfo struct {
 	RASignature int64         `json:"ra_signature"`
 	EKUs        []string      `json:"ekus"`
 	AppPolicies []string      `json:"app_policies"`
+	ACL         *SDInfo       `json:"acl,omitempty"`
+}
+
+// CAACLInfo holds parsed ACL for a CA.
+type CAACLInfo struct {
+	CA  string  `json:"ca"`
+	ACL *SDInfo `json:"acl,omitempty"`
 }
 
 // ESCFinding is a potential misconfiguration.
@@ -223,6 +230,58 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 
 // ── Template parser ───────────────────────────────────────────────────────
 
+// isLowPrivSID returns true for SIDs that represent low-privilege principals
+// (Everyone, Authenticated Users, Domain Users, Domain Computers).
+func isLowPrivSID(sid string) bool {
+	lowPriv := map[string]bool{
+		"S-1-1-0":  true, // Everyone
+		"S-1-5-7":  true, // Anonymous
+		"S-1-5-11": true, // Authenticated Users
+	}
+	if lowPriv[sid] {
+		return true
+	}
+	// Domain Users (RID 513), Domain Computers (RID 515)
+	if strings.HasSuffix(sid, "-513") || strings.HasSuffix(sid, "-515") {
+		return true
+	}
+	return false
+}
+
+// enrollersDescription returns a human-readable list of who can enroll.
+func enrollersDescription(acl *SDInfo, domainSID string) string {
+	if acl == nil {
+		return ""
+	}
+	var parts []string
+	seen := map[string]bool{}
+	for _, ace := range acl.Enrollers {
+		name := FriendlySID(ace.SID, domainSID)
+		if !seen[name] {
+			parts = append(parts, fmt.Sprintf("%s (%s)", name, ace.Rights))
+			seen[name] = true
+		}
+	}
+	for _, ace := range acl.FullControl {
+		name := FriendlySID(ace.SID, domainSID)
+		if !seen[name] {
+			parts = append(parts, fmt.Sprintf("%s (GenericAll)", name))
+			seen[name] = true
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	result := ""
+	for i, p := range parts {
+		if i > 0 {
+			result += ", "
+		}
+		result += p
+	}
+	return result
+}
+
 func parseTemplate(obj adws.ADObject) TemplateInfo {
 	t := TemplateInfo{
 		Object:      obj,
@@ -232,6 +291,11 @@ func parseTemplate(obj adws.ADObject) TemplateInfo {
 		RASignature: parseInt(attrStr(obj, "msPKI-RA-Signature")),
 		EKUs:        attrSlice(obj, "pKIExtendedKeyUsage"),
 		AppPolicies: attrSlice(obj, "msPKI-Certificate-Application-Policy"),
+	}
+	// Parse ACL from nTSecurityDescriptor
+	sdRaw := attrStr(obj, "nTSecurityDescriptor")
+	if sdRaw != "" {
+		t.ACL = ParseSD(sdRaw)
 	}
 	return t
 }
@@ -266,15 +330,20 @@ func analyseESC(r *ADCSResult) []ESCFinding {
 			t.RASignature == 0 &&
 			t.EnrollFlag&ctFlagPendAllRequests == 0 &&
 			hasAuthEKU(t.EKUs) {
+			enrollDesc := enrollersDescription(t.ACL, "")
+			desc := "Template allows enrollee to supply SAN + has auth EKU + no RA approval. Allows domain privilege escalation by requesting cert as any user."
+			if enrollDesc != "" {
+				desc += "\n    Enrollers: " + enrollDesc
+			}
 			f := ESCFinding{
 				ESC:         "ESC1",
 				Template:    name,
 				Risk:        "CRITICAL",
-				Description: "Template allows enrollee to supply SAN + has auth EKU + no RA approval. Allows domain privilege escalation by requesting cert as any user.",
-				Note:        "Verify enroll/autoenroll rights on template ACL.",
+				Description: desc,
+				Note:        "",
 			}
 			if unknownPublish {
-				f.Note += " (CA data unavailable — publish status unknown)"
+				f.Note = "(CA data unavailable — publish status unknown)"
 			}
 			findings = append(findings, f)
 		}
@@ -328,18 +397,33 @@ func analyseESC(r *ADCSResult) []ESCFinding {
 			})
 		}
 
-		// ── ESC4 (ACL-based — flag for manual review) ─────────────────
-		// We collect nTSecurityDescriptor but don't parse binary SDs here.
-		// Flag templates that are write-accessible as needing ACL review.
-		// A proper check requires parsing the raw security descriptor.
-		if attrStr(t.Object, "nTSecurityDescriptor") != "" {
-			findings = append(findings, ESCFinding{
-				ESC:         "ESC4-check",
-				Template:    name,
-				Risk:        "REVIEW",
-				Description: "nTSecurityDescriptor collected. Review ACL for GenericWrite, WriteDACL, WriteOwner, WriteProperty from low-priv principals.",
-				Note:        "Parse nTSecurityDescriptor field in output JSON.",
-			})
+		// ── ESC4 (ACL-based — writable templates) ──────────────────
+		if t.ACL != nil {
+			// Check for dangerous write ACEs from non-admin principals
+			for _, ace := range t.ACL.Writers {
+				if isLowPrivSID(ace.SID) {
+					findings = append(findings, ESCFinding{
+						ESC:         "ESC4",
+						Template:    name,
+						Risk:        "HIGH",
+						Description: fmt.Sprintf("Template writable by %s (%s). Can modify template to enable ESC1.", ace.SID, ace.Rights),
+						Note:        "Modify template flags to allow SAN + auth EKU, then enroll.",
+					})
+					break // one finding per template
+				}
+			}
+			for _, ace := range t.ACL.FullControl {
+				if isLowPrivSID(ace.SID) {
+					findings = append(findings, ESCFinding{
+						ESC:         "ESC4",
+						Template:    name,
+						Risk:        "CRITICAL",
+						Description: fmt.Sprintf("Template GenericAll by %s. Full control over template.", ace.SID),
+						Note:        "Modify template for ESC1, then enroll as any user.",
+					})
+					break
+				}
+			}
 		}
 	}
 
@@ -356,14 +440,45 @@ func analyseESC(r *ADCSResult) []ESCFinding {
 			Note:        "If bit 0x00040 is set, any SAN can be included in cert requests — domain escalation risk.",
 		})
 
-		// ── ESC7 (CA ACL — flag for review) ───────────────────────────
-		findings = append(findings, ESCFinding{
-			ESC:         "ESC7-check",
-			CA:          caName,
-			Risk:        "REVIEW",
-			Description: "Review CA ACL for ManageCertificates/ManageCA rights granted to low-priv principals.",
-			Note:        "Parse nTSecurityDescriptor on CA object in output JSON.",
-		})
+		// ── ESC7 (CA ACL — ManageCertificates/ManageCA) ──────────────
+		caSDRaw := attrStr(ca.Object, "nTSecurityDescriptor")
+		if caSDRaw != "" {
+			caSD := ParseSD(caSDRaw)
+			if caSD != nil {
+				for _, ace := range caSD.Writers {
+					if isLowPrivSID(ace.SID) {
+						findings = append(findings, ESCFinding{
+							ESC:         "ESC7",
+							CA:          caName,
+							Risk:        "HIGH",
+							Description: fmt.Sprintf("CA writable by %s (%s). May have ManageCertificates/ManageCA.", ace.SID, ace.Rights),
+							Note:        "ManageCA can modify CA config. ManageCertificates can approve pending requests.",
+						})
+						break
+					}
+				}
+				for _, ace := range caSD.FullControl {
+					if isLowPrivSID(ace.SID) {
+						findings = append(findings, ESCFinding{
+							ESC:         "ESC7",
+							CA:          caName,
+							Risk:        "CRITICAL",
+							Description: fmt.Sprintf("CA GenericAll by %s. Full control over CA.", ace.SID),
+							Note:        "Can modify CA configuration and approve certificate requests.",
+						})
+						break
+					}
+				}
+			}
+		} else {
+			findings = append(findings, ESCFinding{
+				ESC:         "ESC7-check",
+				CA:          caName,
+				Risk:        "REVIEW",
+				Description: "CA nTSecurityDescriptor not readable. Manually review CA ACL.",
+				Note:        "Check ManageCertificates/ManageCA rights.",
+			})
+		}
 	}
 
 	return findings
