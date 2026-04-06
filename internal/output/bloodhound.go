@@ -462,8 +462,13 @@ func (c *BHConverter) ConvertGroups(objects []adws.ADObject) []bhGroup {
 					ObjectIdentifier: fspSID,
 					ObjectType:       "Group",
 				})
+			} else {
+				// Unresolved DN — send raw DN so BH can resolve if object exists in graph
+				members = append(members, bhTypedID{
+					ObjectIdentifier: dn,
+					ObjectType:       "Base",
+				})
 			}
-			// Skip members we can't resolve — don't send DN= which BH can't handle
 		}
 
 		g := bhGroup{
