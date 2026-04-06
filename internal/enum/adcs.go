@@ -9,10 +9,13 @@ package enum
 //   - The ADWS query pattern looks identical to a generic config container dump.
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"spectral/internal/adws"
 )
@@ -55,8 +58,17 @@ type ADCSResult struct {
 
 // CAInfo holds an enterprise CA and the names of templates it publishes.
 type CAInfo struct {
-	Object    adws.ADObject `json:"object"`
-	Templates []string      `json:"published_templates"`
+	Object       adws.ADObject   `json:"object"`
+	Templates    []string        `json:"published_templates"`
+	WebEndpoints []WebEndpoint   `json:"web_endpoints,omitempty"`
+}
+
+// WebEndpoint represents an HTTP enrollment endpoint found on a CA.
+type WebEndpoint struct {
+	URL        string `json:"url"`
+	Status     int    `json:"status"`
+	NTLM       bool   `json:"ntlm"`
+	Negotiate  bool   `json:"negotiate"`
 }
 
 // TemplateInfo holds a template object with parsed flag values for analysis.
@@ -161,7 +173,29 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 	}
 	for _, obj := range caObjs {
 		templates := attrSlice(obj, "certificateTemplates")
-		result.CAs = append(result.CAs, CAInfo{Object: obj, Templates: templates})
+		ca := CAInfo{Object: obj, Templates: templates}
+
+		// ESC8: probe web enrollment endpoints
+		hostname := attrStr(obj, "dNSHostName")
+		if hostname != "" {
+			log.Printf("%s [*] ADCS: probing web enrollment on %s", ts(), hostname)
+			ca.WebEndpoints = probeWebEnrollment(hostname)
+			if len(ca.WebEndpoints) > 0 {
+				ntlmCount := 0
+				for _, ep := range ca.WebEndpoints {
+					if ep.NTLM {
+						ntlmCount++
+					}
+				}
+				if ntlmCount > 0 {
+					log.Printf("%s [!] ADCS: %d HTTP endpoint(s) with NTLM on %s (ESC8)", ts(), ntlmCount, hostname)
+				} else {
+					log.Printf("%s [+] ADCS: %d HTTP endpoint(s) on %s (no NTLM)", ts(), len(ca.WebEndpoints), hostname)
+				}
+			}
+		}
+
+		result.CAs = append(result.CAs, ca)
 	}
 	if e.verbose {
 		log.Printf("%s [+] ADCS: %d enterprise CA(s)", ts(), len(result.CAs))
@@ -507,7 +541,87 @@ func analyseESC(r *ADCSResult, domainSID string) []ESCFinding {
 		}
 	}
 
+	// ── ESC8 (HTTP enrollment with NTLM — relay target) ─────────────
+	for _, ca := range r.CAs {
+		caName := attrStr(ca.Object, "cn")
+		for _, ep := range ca.WebEndpoints {
+			if ep.NTLM {
+				findings = append(findings, ESCFinding{
+					ESC:         "ESC8",
+					CA:          caName,
+					Risk:        "CRITICAL",
+					Description: fmt.Sprintf("CA exposes HTTP enrollment at %s with NTLM auth. Relay NTLM authentication to request certificates as the relayed user.", ep.URL),
+					Note:        "Use ntlmrelayx.py --target " + ep.URL + " --adcs --template <template>",
+				})
+			}
+		}
+	}
+
 	return findings
+}
+
+// ── ESC8: HTTP enrollment endpoint probe ─────────────────────────────────
+
+// probeWebEnrollment checks if a CA exposes HTTP-based enrollment endpoints
+// that accept NTLM authentication (ESC8 relay target).
+func probeWebEnrollment(hostname string) []WebEndpoint {
+	if hostname == "" {
+		return nil
+	}
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // don't follow redirects
+		},
+	}
+
+	endpoints := []string{
+		"/certsrv/",
+		"/certsrv/certfnsh.asp",
+		"/ADPolicyProvider_CEP_Usernamepassword/service.svc",
+		"/CES_Kerberos/service.svc",
+	}
+
+	var results []WebEndpoint
+	for _, scheme := range []string{"http", "https"} {
+		for _, ep := range endpoints {
+			url := fmt.Sprintf("%s://%s%s", scheme, hostname, ep)
+			resp, err := client.Get(url)
+			if err != nil {
+				continue
+			}
+			resp.Body.Close()
+
+			we := WebEndpoint{
+				URL:    url,
+				Status: resp.StatusCode,
+			}
+
+			// Check WWW-Authenticate header for NTLM/Negotiate
+			authHeader := resp.Header.Get("WWW-Authenticate")
+			if authHeader == "" && resp.StatusCode == 401 {
+				// Some servers only return auth header on 401
+				we.NTLM = false
+			}
+			if strings.Contains(authHeader, "NTLM") {
+				we.NTLM = true
+			}
+			if strings.Contains(authHeader, "Negotiate") {
+				we.Negotiate = true
+			}
+
+			// Interesting if reachable (200, 401, 403)
+			if resp.StatusCode == 200 || resp.StatusCode == 401 || resp.StatusCode == 403 {
+				results = append(results, we)
+			}
+		}
+	}
+
+	return results
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
