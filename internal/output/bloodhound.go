@@ -312,7 +312,7 @@ func (c *BHConverter) ConvertUsers(objects []adws.ADObject) []bhUser {
 			AllowedToDelegate: enum.AttrSliceStr(obj, "msDS-AllowedToDelegateTo"),
 			HasSIDHistory:     []string{},
 			SPNTargets:        []bhSPNTarget{},
-			Aces:              []bhAce{},
+			Aces:              sdToBHAces(obj, c.dnToSID, c.dnToType),
 			Properties: bhUserProps{
 				Name:                  fmt.Sprintf("%s@%s", strings.ToUpper(sam), c.domain),
 				Domain:                c.domain,
@@ -376,7 +376,7 @@ func (c *BHConverter) ConvertComputers(objects []adws.ADObject) []bhComputer {
 			RemoteDesktopUsers: bhLocalData{Results: []interface{}{}, Collected: false},
 			DcomUsers:          bhLocalData{Results: []interface{}{}, Collected: false},
 			PSRemoteUsers:      bhLocalData{Results: []interface{}{}, Collected: false},
-			Aces:               []bhAce{},
+			Aces:               sdToBHAces(obj, c.dnToSID, c.dnToType),
 			Properties: bhComputerProps{
 				Name:                  fmt.Sprintf("%s@%s", strings.ToUpper(name), c.domain),
 				Domain:                c.domain,
@@ -425,7 +425,7 @@ func (c *BHConverter) ConvertGroups(objects []adws.ADObject) []bhGroup {
 		g := bhGroup{
 			ObjectIdentifier: sid,
 			Members:          members,
-			Aces:             []bhAce{},
+			Aces:             sdToBHAces(obj, c.dnToSID, c.dnToType),
 			Properties: bhGroupProps{
 				Name:              fmt.Sprintf("%s@%s", strings.ToUpper(sam), c.domain),
 				Domain:            c.domain,
@@ -610,6 +610,100 @@ func WriteBHZip(
 
 // convertGUID decodes a base64 objectGUID and formats it as {xxxxxxxx-xxxx-...}.
 // Windows stores GUIDs in mixed-endian: first 3 components are little-endian.
+// sdToBHAces converts parsed nTSecurityDescriptor ACEs to BloodHound ACE format.
+func sdToBHAces(obj adws.ADObject, dnToSID map[string]string, dnToType map[string]string) []bhAce {
+	sdRaw := enum.AttrStr(obj, "nTSecurityDescriptor")
+	if sdRaw == "" {
+		return []bhAce{}
+	}
+	sd := enum.ParseSD(sdRaw)
+	if sd == nil {
+		return []bhAce{}
+	}
+
+	var aces []bhAce
+
+	// Map access mask bits to BH right names
+	type aceMapping struct {
+		mask  uint32
+		right string
+		guid  string // for object-specific ACEs
+	}
+
+	for _, sdAce := range append(append(sd.Enrollers, sd.Writers...), sd.FullControl...) {
+		if sdAce.Type != "Allow" {
+			continue
+		}
+
+		principalSID := sdAce.SID
+		principalType := "Base" // default
+
+		// Try to determine principal type from our index
+		for dn, sid := range dnToSID {
+			if sid == principalSID {
+				if t, ok := dnToType[dn]; ok {
+					principalType = t
+				}
+				break
+			}
+		}
+
+		// Well-known SID types
+		switch {
+		case strings.HasSuffix(principalSID, "-513"), strings.HasSuffix(principalSID, "-512"),
+			strings.HasSuffix(principalSID, "-519"), strings.HasSuffix(principalSID, "-518"):
+			principalType = "Group"
+		case principalSID == "S-1-5-11", principalSID == "S-1-1-0", principalSID == "S-1-5-32-544",
+			principalSID == "S-1-5-32-545":
+			principalType = "Group"
+		case principalSID == "S-1-5-18":
+			principalType = "User"
+		}
+
+		mask := sdAce.AccessMask
+
+		if mask&0x10000000 != 0 { // GenericAll
+			aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "GenericAll", IsInherited: false})
+			continue
+		}
+		if mask&0x40000000 != 0 { // GenericWrite
+			aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "GenericWrite", IsInherited: false})
+		}
+		if mask&0x00040000 != 0 { // WriteDACL
+			aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "WriteDacl", IsInherited: false})
+		}
+		if mask&0x00080000 != 0 { // WriteOwner
+			aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "WriteOwner", IsInherited: false})
+		}
+		if mask&0x00000100 != 0 { // Extended rights
+			if sdAce.ObjectGUID == "" {
+				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "AllExtendedRights", IsInherited: false})
+			} else if sdAce.ObjectGUID == "00299570-246d-11d0-a768-00aa006e0529" {
+				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "ForceChangePassword", IsInherited: false})
+			}
+		}
+		if mask&0x00000020 != 0 { // WriteProperty
+			if sdAce.ObjectGUID == "bf9679c0-0de6-11d0-a285-00aa003049e2" {
+				// member attribute
+				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "AddMember", IsInherited: false})
+			}
+		}
+		if mask&0x00000100 != 0 && sdAce.ObjectGUID == "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2" {
+			aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "GetChanges", IsInherited: false})
+		}
+		if mask&0x00000100 != 0 && sdAce.ObjectGUID == "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2" {
+			aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "GetChangesAll", IsInherited: false})
+		}
+	}
+
+	// Owner gets Owns edge
+	if sd.OwnerSID != "" {
+		aces = append(aces, bhAce{PrincipalSID: sd.OwnerSID, PrincipalType: "Base", RightName: "Owns", IsInherited: false})
+	}
+
+	return aces
+}
+
 func domainModeStr(mode int) string {
 	switch mode {
 	case 0:
