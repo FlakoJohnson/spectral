@@ -46,6 +46,12 @@ type Client struct {
 // ADObject is a single LDAP object returned from a query.
 type ADObject = sopa.ADWSItem
 
+// ADCAPDomain is the domain metadata from MS-ADCAP.
+type ADCAPDomain = sopa.ADCAPActiveDirectoryDomain
+
+// ADCAPForest is the forest metadata from MS-ADCAP.
+type ADCAPForest = sopa.ADCAPActiveDirectoryForest
+
 // NewClient initialises a client from Config.
 func NewClient(cfg Config) (*Client, error) {
 	inner, err := buildInner(cfg)

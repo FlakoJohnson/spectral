@@ -281,6 +281,7 @@ func main() {
 		if err := output.WriteBHZip(
 			*outDir, filePrefix, *domain, domainSID,
 			coll.users, coll.computers, coll.groups, coll.gpos, coll.trusts,
+			coll.domainInfo,
 		); err != nil {
 			log.Printf("%s [-] BloodHound zip: %v", ts(), err)
 		}
@@ -293,12 +294,13 @@ func main() {
 
 // collector accumulates sweep results for BloodHound output.
 type collector struct {
-	users     []adws.ADObject
-	computers []adws.ADObject
-	groups    []adws.ADObject
-	gpos      []adws.ADObject
-	trusts    []adws.ADObject
-	domainSID string
+	users      []adws.ADObject
+	computers  []adws.ADObject
+	groups     []adws.ADObject
+	gpos       []adws.ADObject
+	trusts     []adws.ADObject
+	domainSID  string
+	domainInfo *enum.DomainResult
 }
 
 // runModeCollect wraps runMode and captures sweep results into the collector.
@@ -320,6 +322,12 @@ func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays in
 				coll.domainSID = domainSIDFromObject(data[0])
 			}
 			output.PrintUsers(data)
+		}
+	case "domain":
+		data, err := e.Domain()
+		res.data, res.err = data, err
+		if err == nil {
+			coll.domainInfo = data
 		}
 	case "computers":
 		data, err := e.Computers()

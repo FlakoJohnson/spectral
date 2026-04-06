@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	sopa "github.com/Macmod/sopa"
+
 	"spectral/internal/adws"
 	"spectral/internal/enum"
 )
@@ -481,6 +483,7 @@ func (c *BHConverter) ConvertTrusts(objects []adws.ADObject) []bhTrust {
 func WriteBHZip(
 	outDir, filePrefix, domain, domainSID string,
 	users, computers, groups, gpos, trusts []adws.ADObject,
+	domainInfo *enum.DomainResult,
 ) error {
 	c := NewBHConverter(domain, domainSID)
 	c.IndexObjects(users, computers, groups)
@@ -517,6 +520,17 @@ func WriteBHZip(
 	}
 	domainDN := strings.Join(dnComponents, ",")
 
+	// Build domain properties — use ADCAP data if available
+	funcLevel := "Unknown"
+	if domainInfo != nil {
+		if d, ok := domainInfo.Domain.(*sopa.ADCAPActiveDirectoryDomain); ok && d != nil {
+			funcLevel = domainModeStr(d.DomainMode)
+			if domainSID == "" {
+				domainSID = d.DomainSID
+			}
+		}
+	}
+
 	domainObj := bhDomain{
 		ObjectIdentifier: domainSID,
 		Properties: bhDomainProps{
@@ -524,7 +538,7 @@ func WriteBHZip(
 			Domain:            strings.ToUpper(domain),
 			DomainSID:         domainSID,
 			DistinguishedName: domainDN,
-			FunctionalLevel:   "Unknown",
+			FunctionalLevel:   funcLevel,
 			Collected:         true,
 			HighValue:         true,
 			WhenCreated:       -1,
@@ -569,6 +583,31 @@ func WriteBHZip(
 
 // convertGUID decodes a base64 objectGUID and formats it as {xxxxxxxx-xxxx-...}.
 // Windows stores GUIDs in mixed-endian: first 3 components are little-endian.
+func domainModeStr(mode int) string {
+	switch mode {
+	case 0:
+		return "Windows 2000"
+	case 1:
+		return "Windows Server 2003 Mixed"
+	case 2:
+		return "Windows Server 2003"
+	case 3:
+		return "Windows Server 2008"
+	case 4:
+		return "Windows Server 2008 R2"
+	case 5:
+		return "Windows Server 2012"
+	case 6:
+		return "Windows Server 2012 R2"
+	case 7:
+		return "Windows Server 2016"
+	case 10:
+		return "Windows Server 2025"
+	default:
+		return fmt.Sprintf("Unknown (%d)", mode)
+	}
+}
+
 func convertGUID(raw string) string {
 	if raw == "" {
 		return ""
