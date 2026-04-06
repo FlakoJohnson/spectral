@@ -244,25 +244,18 @@ type BHConverter struct {
 	domain    string
 	domainSID string
 	// DN → SID lookup built from users + computers for member resolution.
-	dnToSID       map[string]string
-	dnToType      map[string]string
-	unresolvedDNs map[string]bool
+	dnToSID  map[string]string
+	dnToType map[string]string
 }
 
 // NewBHConverter creates a converter. domainSID is the domain's S-1-5-21-... SID.
 func NewBHConverter(domain, domainSID string) *BHConverter {
 	return &BHConverter{
-		domain:        strings.ToUpper(domain),
-		domainSID:     domainSID,
-		dnToSID:       make(map[string]string),
-		dnToType:      make(map[string]string),
-		unresolvedDNs: make(map[string]bool),
+		domain:    strings.ToUpper(domain),
+		domainSID: domainSID,
+		dnToSID:   make(map[string]string),
+		dnToType:  make(map[string]string),
 	}
-}
-
-// UnresolvedCount returns how many member DNs couldn't be resolved.
-func (c *BHConverter) UnresolvedCount() int {
-	return len(c.unresolvedDNs)
 }
 
 // IndexObjects builds the DN→SID/type lookup from users, computers, and groups.
@@ -417,6 +410,7 @@ func (c *BHConverter) ConvertGroups(objects []adws.ADObject) []bhGroup {
 		sam := enum.AttrStr(obj, "sAMAccountName")
 
 		// Resolve member DNs to SID+type pairs.
+		// If SID is known from index, use it. Otherwise use DN= prefix for BH resolution.
 		memberDNs := enum.AttrSliceStr(obj, "member")
 		members := make([]bhTypedID, 0, len(memberDNs))
 		for _, dn := range memberDNs {
@@ -427,8 +421,11 @@ func (c *BHConverter) ConvertGroups(objects []adws.ADObject) []bhGroup {
 					ObjectType:       c.dnToType[upper],
 				})
 			} else {
-				// Unresolved member — track DN for secondary resolution
-				c.unresolvedDNs[upper] = true
+				// Use DN= prefix — BH CE resolves by distinguishedname property
+				members = append(members, bhTypedID{
+					ObjectIdentifier: "DN=" + dn,
+					ObjectType:       "Base",
+				})
 			}
 		}
 
@@ -509,8 +506,6 @@ func WriteBHZip(
 	outDir, filePrefix, domain, domainSID string,
 	users, computers, groups, gpos, trusts []adws.ADObject,
 	domainInfo *enum.DomainResult,
-	client *adws.Client,
-	baseDN string,
 ) error {
 	c := NewBHConverter(domain, domainSID)
 	c.IndexObjects(users, computers, groups)
@@ -539,48 +534,6 @@ func WriteBHZip(
 	bhGPOs := c.ConvertGPOs(gpos)
 	bhTrustsSlice := c.ConvertTrusts(trusts)
 
-	// Resolve unresolved member DNs via single batch ADWS query
-	if c.UnresolvedCount() > 0 && client != nil && baseDN != "" {
-		fmt.Printf("  %s[*]%s BH: resolving %d member DNs (1 query)...\n",
-			"\033[33m", "\033[0m", c.UnresolvedCount())
-
-		// Build single OR filter for all unresolved DNs
-		var filterParts []string
-		for dn := range c.unresolvedDNs {
-			escaped := strings.ReplaceAll(dn, "\\", "\\5c")
-			escaped = strings.ReplaceAll(escaped, "(", "\\28")
-			escaped = strings.ReplaceAll(escaped, ")", "\\29")
-			filterParts = append(filterParts, fmt.Sprintf("(distinguishedName=%s)", escaped))
-		}
-		filter := "(|" + strings.Join(filterParts, "") + ")"
-
-		objs, err := client.Query(baseDN, filter,
-			[]string{"objectSid", "objectClass", "distinguishedName"}, 2)
-		if err == nil {
-			for _, obj := range objs {
-				dn := strings.ToUpper(enum.AttrStr(obj, "distinguishedName"))
-				sid := enum.SIDStr(obj, "objectSid")
-				if dn == "" || sid == "" {
-					continue
-				}
-				allClasses := strings.ToLower(strings.Join(enum.AttrSliceStr(obj, "objectClass"), " "))
-				objType := "Base"
-				if strings.Contains(allClasses, "computer") {
-					objType = "Computer"
-				} else if strings.Contains(allClasses, "user") || strings.Contains(allClasses, "person") {
-					objType = "User"
-				} else if strings.Contains(allClasses, "group") {
-					objType = "Group"
-				}
-				c.dnToSID[dn] = sid
-				c.dnToType[dn] = objType
-			}
-			fmt.Printf("  %s[+]%s BH: resolved %d/%d member DNs\n",
-				"\033[32m", "\033[0m", len(objs), c.UnresolvedCount())
-			// Re-convert groups with updated index
-			bhGroups = c.ConvertGroups(groups)
-		}
-	}
 
 	// Build distinguished name from domain FQDN: corp.local → DC=CORP,DC=LOCAL
 	dnParts := strings.Split(strings.ToUpper(domain), ".")
