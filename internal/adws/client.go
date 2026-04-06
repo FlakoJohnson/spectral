@@ -197,6 +197,24 @@ func (c *Client) queryBatchedInner(
 	return <-errCh
 }
 
+// QueryWithSDFlags runs an LDAP search with LDAP_SERVER_SD_FLAGS_OID control.
+// sdFlags=7 requests OWNER + GROUP + DACL security information.
+// This enables reading nTSecurityDescriptor even as a standard user.
+func (c *Client) QueryWithSDFlags(baseDN, filter string, attrs []string, scope, sdFlags int) ([]ADObject, error) {
+	result, err := c.queryWithSD(baseDN, filter, attrs, scope, sdFlags)
+	if err != nil && isBrokenPipe(err) {
+		if rerr := c.reconnect(); rerr != nil {
+			return nil, fmt.Errorf("query failed and reconnect failed: %w (original: %v)", rerr, err)
+		}
+		return c.queryWithSD(baseDN, filter, attrs, scope, sdFlags)
+	}
+	return result, err
+}
+
+func (c *Client) queryWithSD(baseDN, filter string, attrs []string, scope, sdFlags int) ([]ADObject, error) {
+	return c.inner.QueryWithSDFlags(baseDN, filter, attrs, scope, sdFlags)
+}
+
 // ConvertSID converts a raw binary SID to S-1-5-21-... string format.
 func ConvertSID(b []byte) string {
 	s, err := sopa.ConvertSIDBytes(b)

@@ -212,6 +212,22 @@ func (c *WSClient) Query(baseDN, filter string, attrs []string, scope int) ([]AD
 	return wsenum.ExecuteQuery(service, baseDN, filter, attrs, scope, defaultMaxElementsPerPull, defaultMaxElementsPerPull, nil)
 }
 
+// QueryWithSDFlags runs a query with LDAP_SERVER_SD_FLAGS_OID control.
+// sdFlags=7 requests OWNER+GROUP+DACL, enabling nTSecurityDescriptor reads.
+func (c *WSClient) QueryWithSDFlags(baseDN, filter string, attrs []string, scope, sdFlags int) ([]ADWSItem, error) {
+	if !c.connected {
+		return nil, fmt.Errorf("not connected")
+	}
+
+	baseDN, filter, attrs, err := wsenum.ValidateQueryInput(baseDN, filter, attrs, scope)
+	if err != nil {
+		return nil, err
+	}
+
+	service := wsenum.NewWSEnumClient(c.nmfConn, c.properDCAddr, c.port, c.ldapPort, c.debugPrintXML, c.debugPrintPullResult)
+	return wsenum.ExecuteQueryWithSD(service, baseDN, filter, attrs, scope, defaultMaxElementsPerPull, sdFlags, nil)
+}
+
 // Get retrieves a single AD object by distinguished name.
 func (c *WSClient) Get(dn string, attrs []string) (*ADWSItem, error) {
 	if !c.connected {

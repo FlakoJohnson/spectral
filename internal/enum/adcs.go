@@ -50,6 +50,7 @@ type ADCSResult struct {
 	RootCAs   []adws.ADObject `json:"root_cas"`
 	NTAuth    []adws.ADObject `json:"ntauth"`
 	Findings  []ESCFinding    `json:"findings"`
+	DomainSID string          `json:"domain_sid,omitempty"`
 }
 
 // CAInfo holds an enterprise CA and the names of templates it publishes.
@@ -148,11 +149,12 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 	if e.verbose {
 		log.Printf("%s [*] ADCS: enterprise CAs", ts())
 	}
-	caObjs, err := e.client.Query(
+	caObjs, err := e.client.QueryWithSDFlags(
 		pkiBase,
 		"(objectClass=pKIEnrollmentService)",
 		caAttrs,
 		adws.ScopeSubtree,
+		7, // OWNER + GROUP + DACL
 	)
 	if err != nil {
 		log.Printf("%s [*] ADCS: enterprise CAs unavailable", ts())
@@ -171,11 +173,12 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 	if e.verbose {
 		log.Printf("%s [*] ADCS: certificate templates", ts())
 	}
-	tmplObjs, err := e.client.Query(
+	tmplObjs, err := e.client.QueryWithSDFlags(
 		pkiBase,
 		"(objectClass=pKIcertificateTemplate)",
 		templateAttrs,
 		adws.ScopeSubtree,
+		7, // OWNER + GROUP + DACL
 	)
 	if err != nil {
 		return nil, fmt.Errorf("adcs templates: %w", err)
@@ -219,13 +222,23 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 		log.Printf("%s [*] ADCS: NTAuth store unavailable", ts())
 	}
 
-	// Check if SDs were returned (requires read access to nTSecurityDescriptor)
+	// Check if SDs were returned and derive domain SID from owner
 	sdCount := 0
+	domainSID := ""
 	for _, t := range result.Templates {
 		if t.ACL != nil {
 			sdCount++
+			// Derive domain SID from owner SID (strip last RID)
+			if domainSID == "" && t.ACL.OwnerSID != "" {
+				owner := t.ACL.OwnerSID
+				idx := strings.LastIndex(owner, "-")
+				if idx > 0 && strings.HasPrefix(owner, "S-1-5-21-") {
+					domainSID = owner[:idx]
+				}
+			}
 		}
 	}
+	result.DomainSID = domainSID
 	if sdCount > 0 {
 		log.Printf("%s [+] ADCS: parsed ACLs on %d/%d templates", ts(), sdCount, len(result.Templates))
 	} else if len(result.Templates) > 0 {
@@ -233,7 +246,7 @@ func (e *Enumerator) ADCS() (*ADCSResult, error) {
 	}
 
 	// 5. Client-side ESC analysis
-	result.Findings = analyseESC(result)
+	result.Findings = analyseESC(result, domainSID)
 	if e.verbose {
 		log.Printf("%s [+] ADCS: %d finding(s)", ts(), len(result.Findings))
 	}
@@ -315,7 +328,7 @@ func parseTemplate(obj adws.ADObject) TemplateInfo {
 
 // ── ESC analysis (all client-side) ───────────────────────────────────────
 
-func analyseESC(r *ADCSResult) []ESCFinding {
+func analyseESC(r *ADCSResult, domainSID string) []ESCFinding {
 	var findings []ESCFinding
 
 	// Build set of templates published by at least one CA.
@@ -343,7 +356,7 @@ func analyseESC(r *ADCSResult) []ESCFinding {
 			t.RASignature == 0 &&
 			t.EnrollFlag&ctFlagPendAllRequests == 0 &&
 			hasAuthEKU(t.EKUs) {
-			enrollDesc := enrollersDescription(t.ACL, "")
+			enrollDesc := enrollersDescription(t.ACL, domainSID)
 			desc := "Template allows enrollee to supply SAN + has auth EKU + no RA approval. Allows domain privilege escalation by requesting cert as any user."
 			if enrollDesc != "" {
 				desc += "\n    Enrollers: " + enrollDesc

@@ -90,3 +90,53 @@ func ExecuteQuery(service *WSEnumClient, baseDN, filter string, attrs []string, 
 	}
 	return allItems, nil
 }
+
+// ExecuteQueryWithSD is like ExecuteQuery but passes sdFlags to Pull requests.
+// sdFlags=7 sends LDAP_SERVER_SD_FLAGS_OID (OWNER+GROUP+DACL).
+func ExecuteQueryWithSD(service *WSEnumClient, baseDN, filter string, attrs []string, scope, maxElementsPerPull, sdFlags int, batchChannel chan<- []soap.ADWSItem) ([]soap.ADWSItem, error) {
+	if maxElementsPerPull <= 0 {
+		maxElementsPerPull = 100
+	}
+
+	enumResp, err := service.Enumerate(baseDN, filter, attrs, scope)
+	if err != nil {
+		return nil, err
+	}
+
+	if enumResp.EndOfSequence {
+		return []soap.ADWSItem{}, nil
+	}
+
+	var allItems []soap.ADWSItem
+	ctx := enumResp.EnumerationContext
+
+	for ctx != "" {
+		pr, err := service.Pull(ctx, maxElementsPerPull, sdFlags)
+		if err != nil {
+			return nil, err
+		}
+
+		if batchChannel != nil {
+			if len(pr.Items) > 0 {
+				batch := make([]soap.ADWSItem, len(pr.Items))
+				copy(batch, pr.Items)
+				batchChannel <- batch
+			}
+		} else {
+			allItems = append(allItems, pr.Items...)
+		}
+
+		if pr.EndOfSequence {
+			break
+		}
+		if pr.EnumerationContext == "" {
+			return nil, fmt.Errorf("invalid Pull response: missing EnumerationContext without EndOfSequence")
+		}
+		ctx = pr.EnumerationContext
+	}
+
+	if batchChannel != nil {
+		return nil, nil
+	}
+	return allItems, nil
+}
