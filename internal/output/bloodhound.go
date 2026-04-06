@@ -539,54 +539,47 @@ func WriteBHZip(
 	bhGPOs := c.ConvertGPOs(gpos)
 	bhTrustsSlice := c.ConvertTrusts(trusts)
 
-	// Resolve unresolved member DNs via ADWS if client is available
+	// Resolve unresolved member DNs via single batch ADWS query
 	if c.UnresolvedCount() > 0 && client != nil && baseDN != "" {
-		fmt.Printf("  %s[*]%s BH: resolving %d unresolved member DNs...\n",
+		fmt.Printf("  %s[*]%s BH: resolving %d member DNs (1 query)...\n",
 			"\033[33m", "\033[0m", c.UnresolvedCount())
-		resolved := 0
+
+		// Build single OR filter for all unresolved DNs
+		var filterParts []string
 		for dn := range c.unresolvedDNs {
-			// Use subtree search with escaped DN filter
-			escapedDN := strings.ReplaceAll(dn, "\\", "\\5c")
-			escapedDN = strings.ReplaceAll(escapedDN, "(", "\\28")
-			escapedDN = strings.ReplaceAll(escapedDN, ")", "\\29")
-			objs, err := client.Query(baseDN,
-				fmt.Sprintf("(distinguishedName=%s)", escapedDN),
-				[]string{"objectSid", "objectClass", "sAMAccountName"},
-				2, // ScopeSubtree
-			)
-			if err != nil || len(objs) == 0 {
-				continue
-			}
-			sid := enum.SIDStr(objs[0], "objectSid")
-			if sid == "" {
-				continue
-			}
-			// objectClass can be multi-valued — check all values
-			allClasses := strings.ToLower(strings.Join(enum.AttrSliceStr(objs[0], "objectClass"), " "))
-			objType := "Base"
-			if strings.Contains(allClasses, "computer") {
-				objType = "Computer"
-			} else if strings.Contains(allClasses, "user") || strings.Contains(allClasses, "person") {
-				objType = "User"
-			} else if strings.Contains(allClasses, "group") {
-				objType = "Group"
-			}
-			c.dnToSID[dn] = sid
-			c.dnToType[dn] = objType
-			resolved++
+			escaped := strings.ReplaceAll(dn, "\\", "\\5c")
+			escaped = strings.ReplaceAll(escaped, "(", "\\28")
+			escaped = strings.ReplaceAll(escaped, ")", "\\29")
+			filterParts = append(filterParts, fmt.Sprintf("(distinguishedName=%s)", escaped))
 		}
-		if resolved > 0 {
+		filter := "(|" + strings.Join(filterParts, "") + ")"
+
+		objs, err := client.Query(baseDN, filter,
+			[]string{"objectSid", "objectClass", "distinguishedName"}, 2)
+		if err == nil {
+			for _, obj := range objs {
+				dn := strings.ToUpper(enum.AttrStr(obj, "distinguishedName"))
+				sid := enum.SIDStr(obj, "objectSid")
+				if dn == "" || sid == "" {
+					continue
+				}
+				allClasses := strings.ToLower(strings.Join(enum.AttrSliceStr(obj, "objectClass"), " "))
+				objType := "Base"
+				if strings.Contains(allClasses, "computer") {
+					objType = "Computer"
+				} else if strings.Contains(allClasses, "user") || strings.Contains(allClasses, "person") {
+					objType = "User"
+				} else if strings.Contains(allClasses, "group") {
+					objType = "Group"
+				}
+				c.dnToSID[dn] = sid
+				c.dnToType[dn] = objType
+			}
 			fmt.Printf("  %s[+]%s BH: resolved %d/%d member DNs\n",
-				"\033[32m", "\033[0m", resolved, c.UnresolvedCount())
+				"\033[32m", "\033[0m", len(objs), c.UnresolvedCount())
 			// Re-convert groups with updated index
 			bhGroups = c.ConvertGroups(groups)
-		} else {
-			fmt.Printf("  %s[*]%s BH: %d member DNs still unresolved (run -m users,groups together)\n",
-				"\033[33m", "\033[0m", c.UnresolvedCount())
 		}
-	} else if c.UnresolvedCount() > 0 {
-		fmt.Printf("  %s[*]%s BH: %d member DNs unresolved (run -m users,groups together for full resolution)\n",
-			"\033[33m", "\033[0m", c.UnresolvedCount())
 	}
 
 	// Build distinguished name from domain FQDN: corp.local → DC=CORP,DC=LOCAL
