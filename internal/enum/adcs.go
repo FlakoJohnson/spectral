@@ -148,27 +148,40 @@ var rootCAAttrs = []string{
 // All ESC logic runs client-side — the ADWS queries are plain objectClass
 // lookups that match normal admin enumeration patterns.
 func (e *Enumerator) ADCS() (*ADCSResult, error) {
-	configDN := configNC(e.baseDN)
-	pkiBase := "CN=Public Key Services,CN=Services," + configDN
-
-	result := &ADCSResult{}
+	// Try each possible Configuration NC (handles child domains in a forest)
+	configCandidates := forestConfigNCs(e.baseDN)
+	var configDN, pkiBase string
+	var caObjs []adws.ADObject
 	var err error
 
+	result := &ADCSResult{}
+
 	// 1. Enterprise CAs (Enrollment Services)
-	// Query from pkiBase with ScopeSubtree rather than from the specific
-	// CN=Enrollment Services container — some DCs return an LDAP referral
-	// when the base DN points deep into the Configuration NC via ADWS.
 	if e.verbose {
 		log.Printf("%s [*] ADCS: enterprise CAs", ts())
 	}
-	caObjs, err := e.client.QueryWithSDFlags(
-		pkiBase,
-		"(objectClass=pKIEnrollmentService)",
-		caAttrs,
-		adws.ScopeSubtree,
-		7, // OWNER + GROUP + DACL
-	)
-	if err != nil {
+	for _, candidate := range configCandidates {
+		pki := "CN=Public Key Services,CN=Services," + candidate
+		caObjs, err = e.client.QueryWithSDFlags(
+			pki,
+			"(objectClass=pKIEnrollmentService)",
+			caAttrs,
+			adws.ScopeSubtree,
+			7,
+		)
+		if err == nil {
+			configDN = candidate
+			pkiBase = pki
+			if e.verbose && candidate != configCandidates[0] {
+				log.Printf("%s [*] ADCS: using forest root config NC: %s", ts(), configDN)
+			}
+			break
+		}
+	}
+	if configDN == "" {
+		// All candidates failed — use default and let it fail gracefully
+		configDN = configNC(e.baseDN)
+		pkiBase = "CN=Public Key Services,CN=Services," + configDN
 		log.Printf("%s [*] ADCS: enterprise CAs unavailable", ts())
 	}
 	for _, obj := range caObjs {
@@ -628,6 +641,22 @@ func probeWebEnrollment(hostname string) []WebEndpoint {
 
 func configNC(baseDN string) string {
 	return "CN=Configuration," + baseDN
+}
+
+// forestConfigNCs returns possible Configuration NC DNs for a domain,
+// trying the full domain first, then progressively stripping child DCs
+// to find the forest root. For amer.corp.local → tries:
+//   CN=Configuration,DC=Amer,DC=Corp,DC=Local
+//   CN=Configuration,DC=Corp,DC=Local
+//   CN=Configuration,DC=Local
+func forestConfigNCs(baseDN string) []string {
+	results := []string{configNC(baseDN)}
+	parts := strings.Split(baseDN, ",")
+	for i := 1; i < len(parts)-1; i++ {
+		candidate := strings.Join(parts[i:], ",")
+		results = append(results, "CN=Configuration,"+candidate)
+	}
+	return results
 }
 
 func templateName(obj adws.ADObject) string {
