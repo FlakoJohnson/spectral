@@ -544,13 +544,22 @@ func min(a, b int) int {
 func PrintGroupMembers(result *enum.SingleResult) {
 	groupName := enum.AttrStr(result.Object, "sAMAccountName")
 	groupSID := enum.SIDStr(result.Object, "objectSid")
+	groupDN := enum.AttrStr(result.Object, "distinguishedName")
+	groupDesc := enum.AttrStr(result.Object, "description")
 
 	fmt.Println()
 	header(fmt.Sprintf("Group: %s", groupName))
 
 	if groupSID != "" {
-		fmt.Printf("  %sSID:%s %s\n\n", grey, reset, groupSID)
+		fmt.Printf("  %s%-16s%s %s\n", bold, "SID", reset, groupSID)
 	}
+	if groupDN != "" {
+		fmt.Printf("  %s%-16s%s %s\n", bold, "DN", reset, groupDN)
+	}
+	if groupDesc != "" {
+		fmt.Printf("  %s%-16s%s %s\n", bold, "Description", reset, groupDesc)
+	}
+	fmt.Println()
 
 	if len(result.GroupMember) == 0 {
 		fmt.Printf("  %sNo members found.%s\n\n", grey, reset)
