@@ -179,6 +179,48 @@ func (c *Client) QueryBatched(
 	return err
 }
 
+// QueryBatchedWithSDFlags is like QueryBatched but passes sdFlags to Pull.
+// sdFlags=7 requests OWNER+GROUP+DACL security descriptors.
+func (c *Client) QueryBatchedWithSDFlags(
+	baseDN, filter string,
+	attrs []string,
+	scope, batchSize, sdFlags int,
+	callback func([]ADObject) error,
+) error {
+	err := c.queryBatchedInnerSD(baseDN, filter, attrs, scope, batchSize, sdFlags, callback)
+	if err != nil && isBrokenPipe(err) {
+		if rerr := c.reconnect(); rerr != nil {
+			return fmt.Errorf("batch query failed and reconnect failed: %w (original: %v)", rerr, err)
+		}
+		return c.queryBatchedInnerSD(baseDN, filter, attrs, scope, batchSize, sdFlags, callback)
+	}
+	return err
+}
+
+func (c *Client) queryBatchedInnerSD(
+	baseDN, filter string,
+	attrs []string,
+	scope, batchSize, sdFlags int,
+	callback func([]ADObject) error,
+) error {
+	ch := make(chan []ADObject, 4)
+	errCh := make(chan error, 1)
+
+	go func() {
+		err := c.inner.QueryBatchedWithSDFlags(baseDN, filter, attrs, scope, batchSize, sdFlags, ch)
+		close(ch)
+		errCh <- err
+	}()
+
+	for batch := range ch {
+		if err := callback(batch); err != nil {
+			return err
+		}
+	}
+
+	return <-errCh
+}
+
 func (c *Client) queryBatchedInner(
 	baseDN, filter string,
 	attrs []string,

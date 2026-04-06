@@ -17,12 +17,13 @@ func (e *Enumerator) Computers() ([]adws.ADObject, error) {
 
 	var results []adws.ADObject
 
-	err := e.client.QueryBatched(
+	err := e.client.QueryBatchedWithSDFlags(
 		e.baseDN,
 		e.prepFilter(computerFilter),
 		e.prepAttrs(computerAttrs),
 		adws.ScopeSubtree,
 		e.batch(),
+		7, // OWNER + GROUP + DACL
 		func(batch []adws.ADObject) error {
 			results = append(results, batch...)
 			if e.verbose {

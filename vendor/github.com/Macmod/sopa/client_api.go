@@ -343,6 +343,25 @@ func (c *WSClient) QueryWithBatchChannel(baseDN, filter string, attrs []string, 
 	return err
 }
 
+// QueryBatchedWithSDFlags streams batched results with sdFlags control for security descriptors.
+func (c *WSClient) QueryBatchedWithSDFlags(baseDN, filter string, attrs []string, scope, maxElementsPerPull, sdFlags int, batchChannel chan<- []ADWSItem) error {
+	if !c.connected {
+		return fmt.Errorf("not connected")
+	}
+	if batchChannel == nil {
+		return fmt.Errorf("batchChannel is required")
+	}
+
+	baseDN, filter, attrs, err := wsenum.ValidateQueryInput(baseDN, filter, attrs, scope)
+	if err != nil {
+		return err
+	}
+
+	service := wsenum.NewWSEnumClient(c.nmfConn, c.properDCAddr, c.port, c.ldapPort, c.debugPrintXML, c.debugPrintPullResult)
+	_, err = wsenum.ExecuteQueryWithSD(service, baseDN, filter, attrs, scope, maxElementsPerPull, sdFlags, batchChannel)
+	return err
+}
+
 func (c *WSClient) isDebugXML() bool {
 	if c.debugXML {
 		return true
