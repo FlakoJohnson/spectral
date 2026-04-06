@@ -440,15 +440,21 @@ func runLookup(e *enum.Enumerator, w *output.Writer, spec string, coll *collecto
 	case "user":
 		result, gerr := e.LookupUser(name)
 		data, err = result, gerr
-		if gerr == nil && coll.domainSID == "" {
-			coll.domainSID = domainSIDFromObject(result.Object)
+		if gerr == nil {
+			output.PrintUserLookup(result)
+			if coll.domainSID == "" {
+				coll.domainSID = domainSIDFromObject(result.Object)
+			}
 		}
 		file = "lookup-user-" + sanitise(name) + ".json"
 	case "computer":
 		result, gerr := e.LookupComputer(name)
 		data, err = result, gerr
-		if gerr == nil && coll.domainSID == "" {
-			coll.domainSID = domainSIDFromObject(result.Object)
+		if gerr == nil {
+			output.PrintComputerLookup(result)
+			if coll.domainSID == "" {
+				coll.domainSID = domainSIDFromObject(result.Object)
+			}
 		}
 		file = "lookup-computer-" + sanitise(name) + ".json"
 	case "group":

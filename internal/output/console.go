@@ -203,6 +203,184 @@ func PrintGroups(groups []adws.ADObject) {
 	fmt.Println()
 }
 
+// PrintUserLookup prints a user's details and group memberships to stdout.
+func PrintUserLookup(result *enum.SingleResult) {
+	sam := enum.AttrStr(result.Object, "sAMAccountName")
+	sid := enum.SIDStr(result.Object, "objectSid")
+	dn := enum.AttrStr(result.Object, "distinguishedName")
+
+	fmt.Println()
+	header(fmt.Sprintf("User: %s", sam))
+
+	// Key properties
+	fields := []struct{ label, attr string }{
+		{"SID", ""},
+		{"UPN", "userPrincipalName"},
+		{"Display Name", "displayName"},
+		{"Description", "description"},
+		{"Email", "mail"},
+		{"DN", "distinguishedName"},
+	}
+	for _, f := range fields {
+		var val string
+		if f.label == "SID" {
+			val = sid
+		} else if f.label == "DN" {
+			val = dn
+		} else {
+			val = enum.AttrStr(result.Object, f.attr)
+		}
+		if val != "" {
+			fmt.Printf("  %s%-16s%s %s\n", bold, f.label, reset, val)
+		}
+	}
+
+	// UAC flags
+	uacStr := enum.AttrStr(result.Object, "userAccountControl")
+	if uacStr != "" {
+		uac := parseInt64(uacStr)
+		flags := []string{}
+		if uac&0x2 != 0 {
+			flags = append(flags, red+"DISABLED"+reset)
+		} else {
+			flags = append(flags, green+"ENABLED"+reset)
+		}
+		if uac&0x10000 != 0 {
+			flags = append(flags, yellow+"PWD_NEVER_EXPIRES"+reset)
+		}
+		if uac&0x400000 != 0 {
+			flags = append(flags, red+"DONT_REQ_PREAUTH"+reset)
+		}
+		if uac&0x80000 != 0 {
+			flags = append(flags, red+"TRUSTED_FOR_DELEGATION"+reset)
+		}
+		if uac&0x1000000 != 0 {
+			flags = append(flags, yellow+"TRUSTED_TO_AUTH_FOR_DELEGATION"+reset)
+		}
+		fmt.Printf("  %s%-16s%s %s\n", bold, "Status", reset, strings.Join(flags, " | "))
+	}
+
+	// AdminCount
+	ac := enum.AttrStr(result.Object, "adminCount")
+	if ac == "1" {
+		fmt.Printf("  %s%-16s%s %s1 ← AdminSDHolder protected%s\n", bold, "AdminCount", reset, red+bold, reset)
+	}
+
+	// SPNs
+	spns := enum.AttrSliceStr(result.Object, "servicePrincipalName")
+	if len(spns) > 0 {
+		fmt.Printf("\n  %s%sSPNs (%d):%s\n", bold, yellow, len(spns), reset)
+		for _, spn := range spns {
+			fmt.Printf("    %s\n", spn)
+		}
+	}
+
+	// Delegation
+	delegateTo := enum.AttrSliceStr(result.Object, "msDS-AllowedToDelegateTo")
+	if len(delegateTo) > 0 {
+		fmt.Printf("\n  %s%sConstrained Delegation:%s\n", bold, red, reset)
+		for _, d := range delegateTo {
+			fmt.Printf("    → %s\n", d)
+		}
+	}
+
+	// Group memberships
+	if len(result.MemberOf) > 0 {
+		fmt.Printf("\n  %s%sMember of (%d groups):%s\n", bold, white, len(result.MemberOf), reset)
+		for _, g := range result.MemberOf {
+			gname := enum.AttrStr(g, "sAMAccountName")
+			gsid := enum.SIDStr(g, "objectSid")
+			fmt.Printf("    %s  %s%s%s\n", gname, grey, gsid, reset)
+		}
+	}
+	fmt.Println()
+}
+
+// PrintComputerLookup prints a computer's details to stdout.
+func PrintComputerLookup(result *enum.SingleResult) {
+	sam := enum.AttrStr(result.Object, "sAMAccountName")
+	sid := enum.SIDStr(result.Object, "objectSid")
+
+	fmt.Println()
+	header(fmt.Sprintf("Computer: %s", strings.TrimSuffix(sam, "$")))
+
+	fields := []struct{ label, attr string }{
+		{"SID", ""},
+		{"DNS Name", "dNSHostName"},
+		{"OS", "operatingSystem"},
+		{"OS Version", "operatingSystemVersion"},
+		{"DN", "distinguishedName"},
+	}
+	for _, f := range fields {
+		var val string
+		if f.label == "SID" {
+			val = sid
+		} else {
+			val = enum.AttrStr(result.Object, f.attr)
+		}
+		if val != "" {
+			fmt.Printf("  %s%-16s%s %s\n", bold, f.label, reset, val)
+		}
+	}
+
+	// UAC flags
+	uacStr := enum.AttrStr(result.Object, "userAccountControl")
+	if uacStr != "" {
+		uac := parseInt64(uacStr)
+		flags := []string{}
+		if uac&0x2 != 0 {
+			flags = append(flags, red+"DISABLED"+reset)
+		} else {
+			flags = append(flags, green+"ENABLED"+reset)
+		}
+		if uac&0x80000 != 0 {
+			flags = append(flags, red+"UNCONSTRAINED_DELEGATION"+reset)
+		}
+		if uac&0x1000000 != 0 {
+			flags = append(flags, yellow+"TRUSTED_TO_AUTH_FOR_DELEGATION"+reset)
+		}
+		fmt.Printf("  %s%-16s%s %s\n", bold, "Status", reset, strings.Join(flags, " | "))
+	}
+
+	// SPNs
+	spns := enum.AttrSliceStr(result.Object, "servicePrincipalName")
+	if len(spns) > 0 {
+		fmt.Printf("\n  %s%sSPNs (%d):%s\n", bold, yellow, len(spns), reset)
+		for _, spn := range spns[:min(10, len(spns))] {
+			fmt.Printf("    %s\n", spn)
+		}
+		if len(spns) > 10 {
+			fmt.Printf("    %s... and %d more%s\n", grey, len(spns)-10, reset)
+		}
+	}
+
+	// Delegation
+	delegateTo := enum.AttrSliceStr(result.Object, "msDS-AllowedToDelegateTo")
+	if len(delegateTo) > 0 {
+		fmt.Printf("\n  %s%sConstrained Delegation:%s\n", bold, red, reset)
+		for _, d := range delegateTo {
+			fmt.Printf("    → %s\n", d)
+		}
+	}
+
+	// Group memberships
+	if len(result.MemberOf) > 0 {
+		fmt.Printf("\n  %s%sMember of (%d groups):%s\n", bold, white, len(result.MemberOf), reset)
+		for _, g := range result.MemberOf {
+			gname := enum.AttrStr(g, "sAMAccountName")
+			fmt.Printf("    %s\n", gname)
+		}
+	}
+	fmt.Println()
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // PrintGroupMembers prints a group's members as a formatted table to stdout.
 func PrintGroupMembers(result *enum.SingleResult) {
 	groupName := enum.AttrStr(result.Object, "sAMAccountName")
