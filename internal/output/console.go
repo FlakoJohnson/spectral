@@ -37,23 +37,121 @@ func PrintADCS(r *enum.ADCSResult) {
 	fmt.Printf("  NTAuth certs    : %s%d%s\n", bold, len(r.NTAuth), reset)
 	fmt.Println()
 
-	// ── Enterprise CAs ─────────────────────────────────────────────────
+	// ── Certificate Authorities (certipy-style) ───────────────────────
 	if len(r.CAs) > 0 {
-		section("Enterprise Certificate Authorities")
-		for _, ca := range r.CAs {
+		section("Certificate Authorities")
+		for i, ca := range r.CAs {
 			caName := enum.AttrStr(ca.Object, "cn")
 			caHost := enum.AttrStr(ca.Object, "dNSHostName")
-			fmt.Printf("  %s%s%s", bold+cyan, caName, reset)
+			caDN := enum.AttrStr(ca.Object, "cACertificateDN")
+
+			fmt.Printf("  %s%d%s\n", bold+white, i, reset)
+			fmt.Printf("    %-36s: %s%s%s\n", "CA Name", bold+cyan, caName, reset)
 			if caHost != "" {
-				fmt.Printf("  (%s)", caHost)
+				fmt.Printf("    %-36s: %s\n", "DNS Name", caHost)
+			}
+			if caDN != "" {
+				fmt.Printf("    %-36s: %s\n", "Certificate Subject", caDN)
+			}
+
+			// Web Enrollment
+			fmt.Printf("    %sWeb Enrollment%s\n", bold, reset)
+			hasHTTP := false
+			hasHTTPS := false
+			for _, ep := range ca.WebEndpoints {
+				if strings.HasPrefix(ep.URL, "http://") {
+					hasHTTP = true
+				} else if strings.HasPrefix(ep.URL, "https://") {
+					hasHTTPS = true
+				}
+			}
+			fmt.Printf("      HTTP\n")
+			if hasHTTP {
+				fmt.Printf("        %-32s: %s%sTrue%s\n", "Enabled", bold, red, reset)
+				for _, ep := range ca.WebEndpoints {
+					if strings.HasPrefix(ep.URL, "http://") {
+						authStr := ""
+						if ep.NTLM && ep.Negotiate {
+							authStr = "NTLM + Negotiate"
+						} else if ep.NTLM {
+							authStr = "NTLM"
+						} else if ep.Negotiate {
+							authStr = "Negotiate"
+						}
+						if authStr != "" {
+							fmt.Printf("        %-32s: %s%s%s%s\n", "Auth", bold, red, authStr, reset)
+						}
+						break
+					}
+				}
+			} else {
+				fmt.Printf("        %-32s: False\n", "Enabled")
+			}
+			fmt.Printf("      HTTPS\n")
+			if hasHTTPS {
+				fmt.Printf("        %-32s: %s%sTrue%s\n", "Enabled", bold, yellow, reset)
+				for _, ep := range ca.WebEndpoints {
+					if strings.HasPrefix(ep.URL, "https://") {
+						authStr := ""
+						if ep.NTLM && ep.Negotiate {
+							authStr = "NTLM + Negotiate"
+						} else if ep.NTLM {
+							authStr = "NTLM"
+						} else if ep.Negotiate {
+							authStr = "Negotiate"
+						}
+						if authStr != "" {
+							fmt.Printf("        %-32s: %s\n", "Auth", authStr)
+						}
+						break
+					}
+				}
+			} else {
+				fmt.Printf("        %-32s: False\n", "Enabled")
+			}
+
+			// Permissions (from parsed ACL)
+			sdRaw := enum.AttrStr(ca.Object, "nTSecurityDescriptor")
+			if sdRaw != "" {
+				caSD := enum.ParseSD(sdRaw)
+				if caSD != nil {
+					fmt.Printf("    %sPermissions%s\n", bold, reset)
+					// Collect permissions by right name
+					permMap := map[string][]string{}
+					allACEs := append(append(caSD.Enrollers, caSD.Writers...), caSD.FullControl...)
+					for _, ace := range allACEs {
+						if ace.Type != "Allow" {
+							continue
+						}
+						friendlySID := enum.FriendlySID(ace.SID, r.DomainSID)
+						permMap[ace.Rights] = appendUnique(permMap[ace.Rights], friendlySID)
+					}
+					for right, principals := range permMap {
+						fmt.Printf("      %-34s: %s\n", right, strings.Join(principals, ", "))
+					}
+				}
+			}
+
+			// Published templates
+			if len(ca.Templates) > 0 {
+				fmt.Printf("    %-36s: %s\n", "Published Templates", strings.Join(ca.Templates, ", "))
+			}
+
+			// Vulnerabilities for this CA
+			caVulns := []enum.ESCFinding{}
+			for _, f := range r.Findings {
+				if f.CA == caName {
+					caVulns = append(caVulns, f)
+				}
+			}
+			if len(caVulns) > 0 {
+				fmt.Printf("    %s[!] Vulnerabilities%s\n", bold+red, reset)
+				for _, f := range caVulns {
+					fmt.Printf("      %-34s: %s\n", f.ESC, f.Description[:min(80, len(f.Description))])
+				}
 			}
 			fmt.Println()
-			if len(ca.Templates) > 0 {
-				fmt.Printf("    %sPublished templates:%s %s\n",
-					grey, reset, strings.Join(ca.Templates, ", "))
-			}
 		}
-		fmt.Println()
 	}
 
 	// ── Findings ───────────────────────────────────────────────────────
@@ -424,6 +522,15 @@ func PrintComputerLookup(result *enum.SingleResult) {
 		}
 	}
 	fmt.Println()
+}
+
+func appendUnique(slice []string, val string) []string {
+	for _, s := range slice {
+		if s == val {
+			return slice
+		}
+	}
+	return append(slice, val)
 }
 
 func min(a, b int) int {
