@@ -525,8 +525,20 @@ func WriteBHZip(
 	if domainInfo != nil {
 		if d, ok := domainInfo.Domain.(*sopa.ADCAPActiveDirectoryDomain); ok && d != nil {
 			funcLevel = domainModeStr(d.DomainMode)
-			if domainSID == "" {
-				domainSID = d.DomainSID
+			if domainSID == "" && d.DomainSID != "" {
+				// ADCAP returns SID as base64 binary — try to convert
+				if strings.HasPrefix(d.DomainSID, "S-1-") {
+					domainSID = d.DomainSID
+				} else {
+					// Try base64 decode → SID conversion
+					raw, err := base64.StdEncoding.DecodeString(d.DomainSID)
+					if err == nil && len(raw) >= 8 {
+						domainSID = adws.ConvertSID(raw)
+					}
+					if domainSID == "" {
+						domainSID = d.DomainSID // fallback to raw
+					}
+				}
 			}
 		}
 	}

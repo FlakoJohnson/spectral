@@ -272,7 +272,8 @@ func main() {
 	// Auto-generate BH zip whenever compatible data was collected,
 	// or when explicitly requested with -bh.
 	hasBHData := len(coll.users) > 0 || len(coll.computers) > 0 ||
-		len(coll.groups) > 0 || len(coll.gpos) > 0 || len(coll.trusts) > 0
+		len(coll.groups) > 0 || len(coll.gpos) > 0 || len(coll.trusts) > 0 ||
+		coll.domainInfo != nil
 	if *bhOut || hasBHData {
 		domainSID := coll.domainSID
 		if domainSID == "" && !*quiet {
