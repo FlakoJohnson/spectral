@@ -378,11 +378,14 @@ func parseTemplate(obj adws.ADObject) TemplateInfo {
 func analyseESC(r *ADCSResult, domainSID string) []ESCFinding {
 	var findings []ESCFinding
 
-	// Build set of templates published by at least one CA.
+	// Build set of templates published by at least one CA + reverse lookup.
 	published := map[string]bool{}
+	templateToCAs := map[string][]string{} // template name → CA names that publish it
 	for _, ca := range r.CAs {
+		caName := attrStr(ca.Object, "cn")
 		for _, t := range ca.Templates {
 			published[t] = true
+			templateToCAs[t] = append(templateToCAs[t], caName)
 		}
 	}
 	// If CA data wasn't available, analyse all templates and note the caveat.
@@ -405,18 +408,26 @@ func analyseESC(r *ADCSResult, domainSID string) []ESCFinding {
 			hasAuthEKU(t.EKUs) {
 			enrollDesc := enrollersDescription(t.ACL, domainSID)
 			desc := "Template allows enrollee to supply SAN + has auth EKU + no RA approval. Allows domain privilege escalation by requesting cert as any user."
+			if cas, ok := templateToCAs[name]; ok {
+				desc += "\n    Published by: " + strings.Join(cas, ", ")
+			}
 			if enrollDesc != "" {
 				desc += "\n    Enrollers: " + enrollDesc
+			}
+			// Build exploit command
+			note := ""
+			if cas, ok := templateToCAs[name]; ok && len(cas) > 0 {
+				note = fmt.Sprintf("certipy req -u <user>@<domain> -p <pass> -ca '%s' -template '%s' -upn administrator@<domain>\n    certipy auth -pfx administrator.pfx -dc-ip <DC>", cas[0], name)
+			}
+			if unknownPublish {
+				note = "(CA data unavailable — publish status unknown)"
 			}
 			f := ESCFinding{
 				ESC:         "ESC1",
 				Template:    name,
 				Risk:        "CRITICAL",
 				Description: desc,
-				Note:        "",
-			}
-			if unknownPublish {
-				f.Note = "(CA data unavailable — publish status unknown)"
+				Note:        note,
 			}
 			findings = append(findings, f)
 		}
@@ -428,8 +439,19 @@ func analyseESC(r *ADCSResult, domainSID string) []ESCFinding {
 				ESC:         "ESC2",
 				Template:    name,
 				Risk:        "HIGH",
-				Description: "Template has Any Purpose EKU or no EKU. Certificate can be used for any purpose including domain auth.",
-				Note:        "Check enrollment rights on template ACL.",
+				Description: func() string {
+					d := "Template has Any Purpose EKU or no EKU. Certificate can be used for any purpose including domain auth."
+					if cas, ok := templateToCAs[name]; ok {
+						d += "\n    Published by: " + strings.Join(cas, ", ")
+					}
+					return d
+				}(),
+				Note:        func() string {
+					if cas, ok := templateToCAs[name]; ok && len(cas) > 0 {
+						return fmt.Sprintf("certipy req -u <user>@<domain> -p <pass> -ca '%s' -template '%s'", cas[0], name)
+					}
+					return "Check enrollment rights on template ACL."
+				}(),
 			})
 		}
 
@@ -440,8 +462,19 @@ func analyseESC(r *ADCSResult, domainSID string) []ESCFinding {
 				ESC:         "ESC3",
 				Template:    name,
 				Risk:        "HIGH",
-				Description: "Template has Certificate Request Agent EKU. Can be used to enroll on behalf of other users.",
-				Note:        "Chain with a template that allows agent enrollment to escalate.",
+				Description: func() string {
+					d := "Template has Certificate Request Agent EKU. Can be used to enroll on behalf of other users."
+					if cas, ok := templateToCAs[name]; ok {
+						d += "\n    Published by: " + strings.Join(cas, ", ")
+					}
+					return d
+				}(),
+				Note:        func() string {
+					if cas, ok := templateToCAs[name]; ok && len(cas) > 0 {
+						return fmt.Sprintf("certipy req -u <user>@<domain> -p <pass> -ca '%s' -template '%s'", cas[0], name)
+					}
+					return "Chain with a template that allows agent enrollment to escalate."
+				}(),
 			})
 		}
 
