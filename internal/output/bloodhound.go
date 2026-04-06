@@ -52,15 +52,17 @@ type bhMeta struct {
 // ── BH object types ───────────────────────────────────────────────────────
 
 type bhUser struct {
-	ObjectIdentifier string       `json:"ObjectIdentifier"`
-	Properties       bhUserProps  `json:"Properties"`
-	AllowedToDelegate []string    `json:"AllowedToDelegate"`
-	PrimaryGroupSID  string       `json:"PrimaryGroupSID"`
-	HasSIDHistory    []string     `json:"HasSIDHistory"`
-	SPNTargets       []bhSPNTarget `json:"SPNTargets"`
-	Aces             []bhAce      `json:"Aces"`
-	IsDeleted        bool         `json:"IsDeleted"`
-	IsACLProtected   bool         `json:"IsACLProtected"`
+	ObjectIdentifier  string        `json:"ObjectIdentifier"`
+	Properties        bhUserProps   `json:"Properties"`
+	AllowedToDelegate []bhTypedID   `json:"AllowedToDelegate"`
+	PrimaryGroupSID   string        `json:"PrimaryGroupSID"`
+	HasSIDHistory     []bhTypedID   `json:"HasSIDHistory"`
+	SPNTargets        []bhSPNTarget `json:"SPNTargets"`
+	Aces              []bhAce       `json:"Aces"`
+	IsDeleted         bool          `json:"IsDeleted"`
+	IsACLProtected    bool          `json:"IsACLProtected"`
+	DomainSID         string        `json:"DomainSID"`
+	UnconstrainedDelegation bool    `json:"UnconstrainedDelegation"`
 }
 
 type bhUserProps struct {
@@ -89,23 +91,26 @@ type bhUserProps struct {
 }
 
 type bhComputer struct {
-	ObjectIdentifier  string         `json:"ObjectIdentifier"`
-	Properties        bhComputerProps `json:"Properties"`
-	PrimaryGroupSID   string         `json:"PrimaryGroupSID"`
-	AllowedToDelegate []string       `json:"AllowedToDelegate"`
-	AllowedToAct      []bhTypedID    `json:"AllowedToAct"`
-	HasSIDHistory     []string       `json:"HasSIDHistory"`
-	Sessions          bhSessions     `json:"Sessions"`
-	PrivilegedSessions bhSessions    `json:"PrivilegedSessions"`
-	RegistrySessions  bhSessions     `json:"RegistrySessions"`
-	LocalAdmins       bhLocalData    `json:"LocalAdmins"`
-	RemoteDesktopUsers bhLocalData   `json:"RemoteDesktopUsers"`
-	DcomUsers         bhLocalData    `json:"DcomUsers"`
-	PSRemoteUsers     bhLocalData    `json:"PSRemoteUsers"`
-	Aces              []bhAce        `json:"Aces"`
-	IsDeleted         bool           `json:"IsDeleted"`
-	IsACLProtected    bool           `json:"IsACLProtected"`
-	Status            *bhConnStatus  `json:"Status"`
+	ObjectIdentifier  string             `json:"ObjectIdentifier"`
+	Properties        bhComputerProps    `json:"Properties"`
+	PrimaryGroupSID   string             `json:"PrimaryGroupSID"`
+	AllowedToDelegate []bhTypedID        `json:"AllowedToDelegate"`
+	AllowedToAct      []bhTypedID        `json:"AllowedToAct"`
+	DumpSMSAPassword  []bhTypedID        `json:"DumpSMSAPassword"`
+	HasSIDHistory     []bhTypedID        `json:"HasSIDHistory"`
+	Sessions          bhSessionResult    `json:"Sessions"`
+	PrivilegedSessions bhSessionResult   `json:"PrivilegedSessions"`
+	RegistrySessions  bhSessionResult    `json:"RegistrySessions"`
+	LocalGroups       []bhLocalGroupResult `json:"LocalGroups"`
+	UserRights        []bhUserRightResult  `json:"UserRights"`
+	DCRegistryData    bhDCRegistryData   `json:"DCRegistryData"`
+	Status            bhConnStatus       `json:"Status"`
+	Aces              []bhAce            `json:"Aces"`
+	IsDeleted         bool               `json:"IsDeleted"`
+	IsACLProtected    bool               `json:"IsACLProtected"`
+	IsDC              bool               `json:"IsDC"`
+	DomainSID         string             `json:"DomainSID"`
+	UnconstrainedDelegation bool         `json:"UnconstrainedDelegation"`
 }
 
 type bhComputerProps struct {
@@ -222,14 +227,38 @@ type bhSPNTarget struct {
 	Service     string `json:"Service"`
 }
 
-type bhSessions struct {
-	Results  []interface{} `json:"Results"`
-	Collected bool         `json:"Collected"`
+type bhSessionResult struct {
+	Results   []bhSession `json:"Results"`
+	Collected bool        `json:"Collected"`
 }
 
-type bhLocalData struct {
-	Results   []interface{} `json:"Results"`
-	Collected bool          `json:"Collected"`
+type bhSession struct {
+	ComputerSID string `json:"ComputerSID"`
+	UserSID     string `json:"UserSID"`
+	LogonType   int    `json:"LogonType"`
+}
+
+type bhLocalGroupResult struct {
+	Results          []bhTypedID `json:"Results"`
+	Name             string     `json:"Name"`
+	ObjectIdentifier string     `json:"ObjectIdentifier"`
+	Collected        bool       `json:"Collected"`
+}
+
+type bhUserRightResult struct {
+	Results   []bhTypedID `json:"Results"`
+	Privilege string      `json:"Privilege"`
+	Collected bool        `json:"Collected"`
+}
+
+type bhDCRegistryData struct {
+	CertificateMappingMethods bhRegResult `json:"CertificateMappingMethods"`
+	StrongCertificateBindingEnforcement bhRegResult `json:"StrongCertificateBindingEnforcement"`
+}
+
+type bhRegResult struct {
+	Collected bool `json:"Collected"`
+	Value     int  `json:"Value"`
 }
 
 type bhConnStatus struct {
@@ -307,12 +336,14 @@ func (c *BHConverter) ConvertUsers(objects []adws.ADObject) []bhUser {
 		}
 
 		u := bhUser{
-			ObjectIdentifier:  sid,
-			PrimaryGroupSID:   primaryGroupSID,
-			AllowedToDelegate: enum.AttrSliceStr(obj, "msDS-AllowedToDelegateTo"),
-			HasSIDHistory:     []string{},
-			SPNTargets:        []bhSPNTarget{},
-			Aces:              sdToBHAces(obj, c.dnToSID, c.dnToType),
+			ObjectIdentifier:       sid,
+			PrimaryGroupSID:        primaryGroupSID,
+			AllowedToDelegate:      []bhTypedID{},
+			HasSIDHistory:          []bhTypedID{},
+			SPNTargets:             []bhSPNTarget{},
+			Aces:                   sdToBHAces(obj, c.dnToSID, c.dnToType),
+			DomainSID:              c.domainSID,
+			UnconstrainedDelegation: uac&0x80000 != 0,
 			Properties: bhUserProps{
 				Name:                  fmt.Sprintf("%s@%s", strings.ToUpper(sam), c.domain),
 				Domain:                c.domain,
@@ -363,20 +394,26 @@ func (c *BHConverter) ConvertComputers(objects []adws.ADObject) []bhComputer {
 			compPGSID = c.domainSID + "-" + pgid
 		}
 
+		isDC := uac&0x2000 != 0 // SERVER_TRUST_ACCOUNT
+
 		comp := bhComputer{
-			ObjectIdentifier:   sid,
-			PrimaryGroupSID:    compPGSID,
-			AllowedToDelegate:  enum.AttrSliceStr(obj, "msDS-AllowedToDelegateTo"),
-			AllowedToAct:       []bhTypedID{},
-			HasSIDHistory:      []string{},
-			Sessions:           bhSessions{Results: []interface{}{}, Collected: false},
-			PrivilegedSessions: bhSessions{Results: []interface{}{}, Collected: false},
-			RegistrySessions:   bhSessions{Results: []interface{}{}, Collected: false},
-			LocalAdmins:        bhLocalData{Results: []interface{}{}, Collected: false},
-			RemoteDesktopUsers: bhLocalData{Results: []interface{}{}, Collected: false},
-			DcomUsers:          bhLocalData{Results: []interface{}{}, Collected: false},
-			PSRemoteUsers:      bhLocalData{Results: []interface{}{}, Collected: false},
-			Aces:               sdToBHAces(obj, c.dnToSID, c.dnToType),
+			ObjectIdentifier:       sid,
+			PrimaryGroupSID:        compPGSID,
+			AllowedToDelegate:      []bhTypedID{},
+			AllowedToAct:           []bhTypedID{},
+			DumpSMSAPassword:       []bhTypedID{},
+			HasSIDHistory:          []bhTypedID{},
+			Sessions:               bhSessionResult{Results: []bhSession{}, Collected: false},
+			PrivilegedSessions:     bhSessionResult{Results: []bhSession{}, Collected: false},
+			RegistrySessions:       bhSessionResult{Results: []bhSession{}, Collected: false},
+			LocalGroups:            []bhLocalGroupResult{},
+			UserRights:             []bhUserRightResult{},
+			DCRegistryData:         bhDCRegistryData{},
+			Status:                 bhConnStatus{Connectable: false, Error: ""},
+			Aces:                   sdToBHAces(obj, c.dnToSID, c.dnToType),
+			IsDC:                   isDC,
+			DomainSID:              c.domainSID,
+			UnconstrainedDelegation: uac&0x80000 != 0,
 			Properties: bhComputerProps{
 				Name:                  fmt.Sprintf("%s@%s", strings.ToUpper(name), c.domain),
 				Domain:                c.domain,
@@ -410,7 +447,6 @@ func (c *BHConverter) ConvertGroups(objects []adws.ADObject) []bhGroup {
 		sam := enum.AttrStr(obj, "sAMAccountName")
 
 		// Resolve member DNs to SID+type pairs.
-		// If SID is known from index, use it. Otherwise use DN= prefix for BH resolution.
 		memberDNs := enum.AttrSliceStr(obj, "member")
 		members := make([]bhTypedID, 0, len(memberDNs))
 		for _, dn := range memberDNs {
@@ -420,13 +456,14 @@ func (c *BHConverter) ConvertGroups(objects []adws.ADObject) []bhGroup {
 					ObjectIdentifier: msid,
 					ObjectType:       c.dnToType[upper],
 				})
-			} else {
-				// Use DN= prefix — BH CE resolves by distinguishedname property
+			} else if fspSID := extractFSPSID(dn); fspSID != "" {
+				// ForeignSecurityPrincipal — CN contains the SID
 				members = append(members, bhTypedID{
-					ObjectIdentifier: "DN=" + dn,
-					ObjectType:       "Base",
+					ObjectIdentifier: fspSID,
+					ObjectType:       "Group",
 				})
 			}
+			// Skip members we can't resolve — don't send DN= which BH can't handle
 		}
 
 		g := bhGroup{
@@ -809,4 +846,23 @@ func trustTypeStr(t int64) string {
 	default:
 		return "UNKNOWN"
 	}
+}
+
+// extractFSPSID extracts the SID from a ForeignSecurityPrincipal DN.
+// e.g. "CN=S-1-5-11,CN=ForeignSecurityPrincipals,DC=ludus,DC=domain" → "S-1-5-11"
+func extractFSPSID(dn string) string {
+	upper := strings.ToUpper(dn)
+	if !strings.Contains(upper, "FOREIGNSECURITYPRINCIPALS") {
+		return ""
+	}
+	parts := strings.SplitN(dn, ",", 2)
+	if len(parts) == 0 {
+		return ""
+	}
+	cn := strings.TrimPrefix(parts[0], "CN=")
+	cn = strings.TrimPrefix(cn, "cn=")
+	if strings.HasPrefix(cn, "S-1-") {
+		return cn
+	}
+	return ""
 }
