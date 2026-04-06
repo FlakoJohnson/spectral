@@ -244,18 +244,25 @@ type BHConverter struct {
 	domain    string
 	domainSID string
 	// DN → SID lookup built from users + computers for member resolution.
-	dnToSID  map[string]string
-	dnToType map[string]string
+	dnToSID       map[string]string
+	dnToType      map[string]string
+	unresolvedDNs map[string]bool
 }
 
 // NewBHConverter creates a converter. domainSID is the domain's S-1-5-21-... SID.
 func NewBHConverter(domain, domainSID string) *BHConverter {
 	return &BHConverter{
-		domain:    strings.ToUpper(domain),
-		domainSID: domainSID,
-		dnToSID:   make(map[string]string),
-		dnToType:  make(map[string]string),
+		domain:        strings.ToUpper(domain),
+		domainSID:     domainSID,
+		dnToSID:       make(map[string]string),
+		dnToType:      make(map[string]string),
+		unresolvedDNs: make(map[string]bool),
 	}
+}
+
+// UnresolvedCount returns how many member DNs couldn't be resolved.
+func (c *BHConverter) UnresolvedCount() int {
+	return len(c.unresolvedDNs)
 }
 
 // IndexObjects builds the DN→SID/type lookup from users, computers, and groups.
@@ -419,6 +426,9 @@ func (c *BHConverter) ConvertGroups(objects []adws.ADObject) []bhGroup {
 					ObjectIdentifier: msid,
 					ObjectType:       c.dnToType[upper],
 				})
+			} else {
+				// Unresolved member — track DN for secondary resolution
+				c.unresolvedDNs[upper] = true
 			}
 		}
 
@@ -499,6 +509,8 @@ func WriteBHZip(
 	outDir, filePrefix, domain, domainSID string,
 	users, computers, groups, gpos, trusts []adws.ADObject,
 	domainInfo *enum.DomainResult,
+	client *adws.Client,
+	baseDN string,
 ) error {
 	c := NewBHConverter(domain, domainSID)
 	c.IndexObjects(users, computers, groups)
@@ -526,6 +538,56 @@ func WriteBHZip(
 	bhGroups := c.ConvertGroups(groups)
 	bhGPOs := c.ConvertGPOs(gpos)
 	bhTrustsSlice := c.ConvertTrusts(trusts)
+
+	// Resolve unresolved member DNs via ADWS if client is available
+	if c.UnresolvedCount() > 0 && client != nil && baseDN != "" {
+		fmt.Printf("  %s[*]%s BH: resolving %d unresolved member DNs...\n",
+			"\033[33m", "\033[0m", c.UnresolvedCount())
+		resolved := 0
+		for dn := range c.unresolvedDNs {
+			// Use subtree search with escaped DN filter
+			escapedDN := strings.ReplaceAll(dn, "\\", "\\5c")
+			escapedDN = strings.ReplaceAll(escapedDN, "(", "\\28")
+			escapedDN = strings.ReplaceAll(escapedDN, ")", "\\29")
+			objs, err := client.Query(baseDN,
+				fmt.Sprintf("(distinguishedName=%s)", escapedDN),
+				[]string{"objectSid", "objectClass", "sAMAccountName"},
+				2, // ScopeSubtree
+			)
+			if err != nil || len(objs) == 0 {
+				continue
+			}
+			sid := enum.SIDStr(objs[0], "objectSid")
+			if sid == "" {
+				continue
+			}
+			// objectClass can be multi-valued — check all values
+			allClasses := strings.ToLower(strings.Join(enum.AttrSliceStr(objs[0], "objectClass"), " "))
+			objType := "Base"
+			if strings.Contains(allClasses, "computer") {
+				objType = "Computer"
+			} else if strings.Contains(allClasses, "user") || strings.Contains(allClasses, "person") {
+				objType = "User"
+			} else if strings.Contains(allClasses, "group") {
+				objType = "Group"
+			}
+			c.dnToSID[dn] = sid
+			c.dnToType[dn] = objType
+			resolved++
+		}
+		if resolved > 0 {
+			fmt.Printf("  %s[+]%s BH: resolved %d/%d member DNs\n",
+				"\033[32m", "\033[0m", resolved, c.UnresolvedCount())
+			// Re-convert groups with updated index
+			bhGroups = c.ConvertGroups(groups)
+		} else {
+			fmt.Printf("  %s[*]%s BH: %d member DNs still unresolved (run -m users,groups together)\n",
+				"\033[33m", "\033[0m", c.UnresolvedCount())
+		}
+	} else if c.UnresolvedCount() > 0 {
+		fmt.Printf("  %s[*]%s BH: %d member DNs unresolved (run -m users,groups together for full resolution)\n",
+			"\033[33m", "\033[0m", c.UnresolvedCount())
+	}
 
 	// Build distinguished name from domain FQDN: corp.local → DC=CORP,DC=LOCAL
 	dnParts := strings.Split(strings.ToUpper(domain), ".")

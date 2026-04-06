@@ -282,7 +282,7 @@ func main() {
 		if err := output.WriteBHZip(
 			*outDir, filePrefix, *domain, domainSID,
 			coll.users, coll.computers, coll.groups, coll.gpos, coll.trusts,
-			coll.domainInfo,
+			coll.domainInfo, client, *baseDN,
 		); err != nil {
 			log.Printf("%s [-] BloodHound zip: %v", ts(), err)
 		}
