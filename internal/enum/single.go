@@ -100,38 +100,26 @@ func (e *Enumerator) LookupGroup(name string) (*SingleResult, error) {
 
 	result := &SingleResult{Object: objs[0]}
 
-	// Resolve each member DN to a lightweight object.
+	// Resolve members — single batch query with combined attrs (1 ADWS request).
 	memberDNs := attrSlice(objs[0], "member")
 	if e.verbose {
 		log.Printf("%s [*]   members: %d", ts(), len(memberDNs))
 	}
 
-	for _, dn := range memberDNs {
-		// Determine object class to pick the right attribute set.
-		// First try user attrs (covers users), fall back to computer attrs.
-		obj, err := e.client.Query(e.baseDN,
-			fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn)),
-			userAttrs,
-			adws.ScopeSubtree)
-		if err != nil || len(obj) == 0 {
-			// Try computer attrs
-			obj, err = e.client.Query(e.baseDN,
-				fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn)),
-				computerAttrs,
-				adws.ScopeSubtree)
-			if err != nil || len(obj) == 0 {
-				// Try minimal — foreign security principal or nested group
-				obj, err = e.client.Query(e.baseDN,
-					fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn)),
-					groupAttrs,
-					adws.ScopeSubtree)
-				if err != nil || len(obj) == 0 {
-					continue
-				}
-			}
+	if len(memberDNs) > 0 {
+		// Build OR filter for all member DNs in one query.
+		var filterParts []string
+		for _, dn := range memberDNs {
+			filterParts = append(filterParts, fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn)))
 		}
-		result.GroupMember = append(result.GroupMember, obj[0])
-		e.pace.BetweenRequests()
+		batchFilter := fmt.Sprintf("(|%s)", strings.Join(filterParts, ""))
+
+		// Combined attribute set — superset of user + computer + group attrs.
+		// Single query, ADWS returns only attrs that exist on each object.
+		memberObjs, err := e.client.Query(e.baseDN, batchFilter, memberLookupAttrs, adws.ScopeSubtree)
+		if err == nil {
+			result.GroupMember = memberObjs
+		}
 	}
 
 	return result, nil

@@ -79,6 +79,36 @@ var trustAttrs = []string{
 	"whenCreated",
 }
 
+// memberLookupAttrs — superset of user + computer + group attrs for batch member resolution.
+// ADWS only returns attributes that exist on each object, so requesting extra is safe.
+// Single query instead of per-member lookups = stealth.
+var memberLookupAttrs = []string{
+	"sAMAccountName",
+	"distinguishedName",
+	"objectSid",
+	"objectGUID",
+	"objectClass",
+	"userPrincipalName",
+	"memberOf",
+	"member",
+	"primaryGroupID",
+	"adminCount",
+	"userAccountControl",
+	"servicePrincipalName",
+	"pwdLastSet",
+	"lastLogon",
+	"lastLogonTimestamp",
+	"description",
+	"mail",
+	"displayName",
+	"whenCreated",
+	"nTSecurityDescriptor",
+	"dNSHostName",
+	"operatingSystem",
+	"operatingSystemVersion",
+	"groupType",
+}
+
 var ouAttrs = []string{
 	"name",
 	"distinguishedName",
