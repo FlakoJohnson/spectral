@@ -107,12 +107,28 @@ func (e *Enumerator) LookupGroup(name string) (*SingleResult, error) {
 	}
 
 	for _, dn := range memberDNs {
+		// Determine object class to pick the right attribute set.
+		// First try user attrs (covers users), fall back to computer attrs.
 		obj, err := e.client.Query(e.baseDN,
 			fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn)),
-			[]string{"sAMAccountName", "distinguishedName", "objectClass", "objectSid"},
+			userAttrs,
 			adws.ScopeSubtree)
 		if err != nil || len(obj) == 0 {
-			continue
+			// Try computer attrs
+			obj, err = e.client.Query(e.baseDN,
+				fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn)),
+				computerAttrs,
+				adws.ScopeSubtree)
+			if err != nil || len(obj) == 0 {
+				// Try minimal — foreign security principal or nested group
+				obj, err = e.client.Query(e.baseDN,
+					fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn)),
+					groupAttrs,
+					adws.ScopeSubtree)
+				if err != nil || len(obj) == 0 {
+					continue
+				}
+			}
 		}
 		result.GroupMember = append(result.GroupMember, obj[0])
 		e.pace.BetweenRequests()

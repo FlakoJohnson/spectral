@@ -478,13 +478,29 @@ func runLookup(e *enum.Enumerator, w *output.Writer, spec string, coll *collecto
 		if gerr == nil {
 			output.PrintGroupMembers(result)
 			if coll.domainSID == "" {
-				// Try the group object itself first, then fall back to members.
 				coll.domainSID = domainSIDFromObject(result.Object)
 				for _, m := range result.GroupMember {
 					if coll.domainSID != "" {
 						break
 					}
 					coll.domainSID = domainSIDFromObject(m)
+				}
+			}
+			// Feed into BH collections so the zip includes full member data.
+			coll.groups = append(coll.groups, result.Object)
+			for _, m := range result.GroupMember {
+				classes := enum.AttrSliceStr(m, "objectClass")
+				isComputer := false
+				for _, cls := range classes {
+					if strings.EqualFold(cls, "computer") {
+						isComputer = true
+						break
+					}
+				}
+				if isComputer {
+					coll.computers = append(coll.computers, m)
+				} else {
+					coll.users = append(coll.users, m)
 				}
 			}
 		}
