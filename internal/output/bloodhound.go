@@ -463,9 +463,9 @@ func (c *BHConverter) ConvertGroups(objects []adws.ADObject) []bhGroup {
 					ObjectType:       "Group",
 				})
 			} else {
-				// Unresolved DN — send raw DN so BH can resolve if object exists in graph
+				// Unresolved DN — BH CE resolves via DN= prefix + distinguishedname property match
 				members = append(members, bhTypedID{
-					ObjectIdentifier: dn,
+					ObjectIdentifier: "DN=" + strings.ToUpper(dn),
 					ObjectType:       "Base",
 				})
 			}
