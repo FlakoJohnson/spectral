@@ -15,19 +15,10 @@ func (e *Enumerator) Computers() ([]adws.ADObject, error) {
 		log.Printf("%s [*] Enumerating computers", ts())
 	}
 
-	var results []adws.ADObject
-
-	err := e.client.QueryBatchedWithSDFlags(
-		e.baseDN,
-		e.prepFilter(computerFilter),
-		e.prepAttrs(computerAttrs),
-		adws.ScopeSubtree,
-		e.batch(),
-		7, // OWNER + GROUP + DACL
+	results, err := e.queryWithRetry(e.baseDN, computerFilter, computerAttrs, 7,
 		func(batch []adws.ADObject) error {
-			results = append(results, batch...)
 			if e.verbose {
-				log.Printf("%s [*]   computers: %d", ts(), len(results))
+				log.Printf("%s [*]   computers: %d", ts(), len(batch))
 			}
 			e.pace.BetweenRequests()
 			return nil

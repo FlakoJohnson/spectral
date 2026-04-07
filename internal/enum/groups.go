@@ -15,19 +15,10 @@ func (e *Enumerator) Groups() ([]adws.ADObject, error) {
 		log.Printf("%s [*] Enumerating groups", ts())
 	}
 
-	var results []adws.ADObject
-
-	err := e.client.QueryBatchedWithSDFlags(
-		e.baseDN,
-		e.prepFilter(groupFilter),
-		e.prepAttrs(groupAttrs),
-		adws.ScopeSubtree,
-		e.batch(),
-		7, // OWNER + GROUP + DACL
+	results, err := e.queryWithRetry(e.baseDN, groupFilter, groupAttrs, 7,
 		func(batch []adws.ADObject) error {
-			results = append(results, batch...)
 			if e.verbose {
-				log.Printf("%s [*]   groups: %d", ts(), len(results))
+				log.Printf("%s [*]   groups: %d", ts(), len(batch))
 			}
 			e.pace.BetweenRequests()
 			return nil

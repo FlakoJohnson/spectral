@@ -2,6 +2,8 @@
 package enum
 
 import (
+	"log"
+	"strings"
 	"time"
 
 	"spectral/internal/adws"
@@ -62,6 +64,77 @@ func (e *Enumerator) batch() int {
 		return opsec.RandomBatch(e.batchMin, e.batchMax)
 	}
 	return e.batchMin
+}
+
+// isADWSTooBig checks if an error is the ADWS "response too large" error.
+func isADWSTooBig(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "DIR_ERROR") || strings.Contains(msg, "8224")
+}
+
+// queryWithRetry runs a batched query and retries with smaller batch size
+// if ADWS rejects the response as too large (DIR_ERROR 5012 / Win32 8224).
+// Retry sequence: original batch → batch=10 → batch=10 without nTSecurityDescriptor.
+func (e *Enumerator) queryWithRetry(
+	baseDN, filter string, attrs []string, sdFlags int,
+	callback func([]adws.ADObject) error,
+) ([]adws.ADObject, error) {
+	var results []adws.ADObject
+	cb := func(batch []adws.ADObject) error {
+		results = append(results, batch...)
+		if callback != nil {
+			return callback(batch)
+		}
+		return nil
+	}
+
+	prepF := e.prepFilter(filter)
+	prepA := e.prepAttrs(attrs)
+	batchSize := e.batch()
+
+	// Attempt 1: normal batch with SD flags
+	var err error
+	if sdFlags > 0 {
+		err = e.client.QueryBatchedWithSDFlags(baseDN, prepF, prepA, adws.ScopeSubtree, batchSize, sdFlags, cb)
+	} else {
+		err = e.client.QueryBatched(baseDN, prepF, prepA, adws.ScopeSubtree, batchSize, cb)
+	}
+
+	if !isADWSTooBig(err) {
+		return results, err
+	}
+
+	// Attempt 2: small batch (10) with SD flags
+	if e.verbose {
+		log.Printf("%s [*] ADWS response too large (batch=%d), retrying with batch=10", ts(), batchSize)
+	}
+	results = nil
+	if sdFlags > 0 {
+		err = e.client.QueryBatchedWithSDFlags(baseDN, prepF, prepA, adws.ScopeSubtree, 10, sdFlags, cb)
+	} else {
+		err = e.client.QueryBatched(baseDN, prepF, prepA, adws.ScopeSubtree, 10, cb)
+	}
+
+	if !isADWSTooBig(err) {
+		return results, err
+	}
+
+	// Attempt 3: small batch without nTSecurityDescriptor
+	if e.verbose {
+		log.Printf("%s [*] Still too large, retrying without nTSecurityDescriptor", ts())
+	}
+	results = nil
+	noSD := make([]string, 0, len(attrs))
+	for _, a := range attrs {
+		if a != "nTSecurityDescriptor" {
+			noSD = append(noSD, a)
+		}
+	}
+	err = e.client.QueryBatched(baseDN, prepF, noSD, adws.ScopeSubtree, 10, cb)
+	return results, err
 }
 
 // prepFilter applies stealth obfuscation to a filter if enabled.

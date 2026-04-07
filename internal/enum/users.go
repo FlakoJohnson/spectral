@@ -16,19 +16,10 @@ func (e *Enumerator) Users() ([]adws.ADObject, error) {
 		log.Printf("%s [*] Enumerating users", ts())
 	}
 
-	var results []adws.ADObject
-
-	err := e.client.QueryBatchedWithSDFlags(
-		e.baseDN,
-		e.prepFilter(userFilter),
-		e.prepAttrs(userAttrs),
-		adws.ScopeSubtree,
-		e.batch(),
-		7, // OWNER + GROUP + DACL
+	results, err := e.queryWithRetry(e.baseDN, userFilter, userAttrs, 7,
 		func(batch []adws.ADObject) error {
-			results = append(results, batch...)
 			if e.verbose {
-				log.Printf("%s [*]   users: %d", ts(), len(results))
+				log.Printf("%s [*]   users: %d", ts(), len(batch))
 			}
 			e.pace.BetweenRequests()
 			return nil

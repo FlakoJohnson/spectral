@@ -14,18 +14,10 @@ func (e *Enumerator) OUs() ([]adws.ADObject, error) {
 		log.Printf("%s [*] Enumerating OUs", ts())
 	}
 
-	var results []adws.ADObject
-
-	err := e.client.QueryBatched(
-		e.baseDN,
-		e.prepFilter(ouFilter),
-		e.prepAttrs(ouAttrs),
-		adws.ScopeSubtree,
-		e.batch(),
+	results, err := e.queryWithRetry(e.baseDN, ouFilter, ouAttrs, 0,
 		func(batch []adws.ADObject) error {
-			results = append(results, batch...)
 			if e.verbose {
-				log.Printf("%s [*]   OUs: %d", ts(), len(results))
+				log.Printf("%s [*]   OUs: %d", ts(), len(batch))
 			}
 			e.pace.BetweenRequests()
 			return nil
