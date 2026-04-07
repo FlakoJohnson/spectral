@@ -2,6 +2,7 @@
 package enum
 
 import (
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -135,6 +136,44 @@ func (e *Enumerator) queryWithRetry(
 	}
 	err = e.client.QueryBatched(baseDN, prepF, noSD, adws.ScopeSubtree, 10, cb)
 	return results, err
+}
+
+// ResolveMembers batch-resolves a list of DNs to full AD objects.
+// Uses domain root DN (not scoped -b) and minimal attrs + memberLookupAttrs.
+// Single ADWS query with OR filter for stealth.
+func (e *Enumerator) ResolveMembers(dns []string) []adws.ADObject {
+	if len(dns) == 0 {
+		return nil
+	}
+
+	// Build OR filter for all DNs. Process in chunks of 50 to avoid
+	// oversized SOAP requests.
+	var all []adws.ADObject
+	chunkSize := 50
+	for i := 0; i < len(dns); i += chunkSize {
+		end := i + chunkSize
+		if end > len(dns) {
+			end = len(dns)
+		}
+		chunk := dns[i:end]
+
+		var parts []string
+		for _, dn := range chunk {
+			parts = append(parts, fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn)))
+		}
+		filter := fmt.Sprintf("(|%s)", strings.Join(parts, ""))
+
+		objs, err := e.client.Query(e.domainDN, filter, memberLookupAttrs, adws.ScopeSubtree)
+		if err != nil {
+			if e.verbose {
+				log.Printf("%s [*] Member resolve chunk failed: %v", ts(), err)
+			}
+			continue
+		}
+		all = append(all, objs...)
+		e.pace.BetweenRequests()
+	}
+	return all
 }
 
 // prepFilter applies stealth obfuscation to a filter if enabled.

@@ -280,6 +280,11 @@ func main() {
 		if domainSID == "" && !*quiet {
 			log.Printf("%s [*] domain SID not resolved (run with -m sweep or -m users to populate)", ts())
 		}
+		// Resolve unresolved group member DNs to SIDs via ADWS.
+		// DN= stubs in BH create orphan nodes that never merge with SID-based nodes.
+		if len(coll.groups) > 0 {
+			coll.resolveGroupMembers(e)
+		}
 		if err := output.WriteBHZip(
 			*outDir, filePrefix, *domain, domainSID,
 			coll.users, coll.computers, coll.groups, coll.gpos, coll.trusts,
@@ -303,6 +308,63 @@ type collector struct {
 	trusts     []adws.ADObject
 	domainSID  string
 	domainInfo *enum.DomainResult
+}
+
+// resolveGroupMembers queries ADWS for any group member DNs that couldn't be
+// resolved to SIDs from the local index. This prevents BH from creating orphan
+// DN-stub nodes that never merge with SID-based nodes.
+func (c *collector) resolveGroupMembers(e *enum.Enumerator) {
+	// Build index of known DNs from collected objects.
+	known := make(map[string]bool)
+	for _, objs := range [][]adws.ADObject{c.users, c.computers, c.groups} {
+		for _, obj := range objs {
+			dn := strings.ToUpper(enum.AttrStr(obj, "distinguishedName"))
+			if dn != "" {
+				known[dn] = true
+			}
+		}
+	}
+
+	// Collect all unresolved member DNs across all groups.
+	var unresolved []string
+	seen := make(map[string]bool)
+	for _, g := range c.groups {
+		for _, dn := range enum.AttrSliceStr(g, "member") {
+			upper := strings.ToUpper(dn)
+			if !known[upper] && !seen[upper] {
+				unresolved = append(unresolved, dn)
+				seen[upper] = true
+			}
+		}
+	}
+
+	if len(unresolved) == 0 {
+		return
+	}
+
+	log.Printf("%s [*] Resolving %d unresolved member DNs via ADWS", ts(), len(unresolved))
+
+	// Batch resolve — query objectSid + objectClass for each unresolved DN.
+	resolved := e.ResolveMembers(unresolved)
+	if len(resolved) > 0 {
+		// Add resolved objects to users/computers so IndexObjects picks them up.
+		for _, obj := range resolved {
+			classes := enum.AttrSliceStr(obj, "objectClass")
+			isComputer := false
+			for _, cls := range classes {
+				if strings.EqualFold(cls, "computer") {
+					isComputer = true
+					break
+				}
+			}
+			if isComputer {
+				c.computers = append(c.computers, obj)
+			} else {
+				c.users = append(c.users, obj)
+			}
+		}
+		log.Printf("%s [+] Resolved %d/%d member DNs to SIDs", ts(), len(resolved), len(unresolved))
+	}
 }
 
 // runModeCollect wraps runMode and captures sweep results into the collector.
