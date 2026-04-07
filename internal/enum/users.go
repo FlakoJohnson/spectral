@@ -1,9 +1,8 @@
 package enum
 
 import (
-	"log"
-
 	"spectral/internal/adws"
+	"log"
 )
 
 // OPSEC: Use (objectCategory=person)(objectClass=user) — the same filter
@@ -18,9 +17,6 @@ func (e *Enumerator) Users() ([]adws.ADObject, error) {
 
 	results, err := e.queryWithRetry(e.baseDN, userFilter, userAttrs, 7,
 		func(batch []adws.ADObject) error {
-			if e.verbose {
-				log.Printf("%s [*]   users: %d", ts(), len(batch))
-			}
 			e.pace.BetweenRequests()
 			return nil
 		},

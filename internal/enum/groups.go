@@ -17,9 +17,6 @@ func (e *Enumerator) Groups() ([]adws.ADObject, error) {
 
 	results, err := e.queryWithRetry(e.baseDN, groupFilter, groupAttrs, 7,
 		func(batch []adws.ADObject) error {
-			if e.verbose {
-				log.Printf("%s [*]   groups: %d", ts(), len(batch))
-			}
 			e.pace.BetweenRequests()
 			return nil
 		},

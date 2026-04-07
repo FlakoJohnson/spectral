@@ -1,9 +1,8 @@
 package enum
 
 import (
-	"log"
-
 	"spectral/internal/adws"
+	"log"
 )
 
 // OPSEC: (objectClass=computer) — same as PowerShell Get-ADComputer.
@@ -17,9 +16,6 @@ func (e *Enumerator) Computers() ([]adws.ADObject, error) {
 
 	results, err := e.queryWithRetry(e.baseDN, computerFilter, computerAttrs, 7,
 		func(batch []adws.ADObject) error {
-			if e.verbose {
-				log.Printf("%s [*]   computers: %d", ts(), len(batch))
-			}
 			e.pace.BetweenRequests()
 			return nil
 		},

@@ -1,9 +1,8 @@
 package enum
 
 import (
-	"log"
-
 	"spectral/internal/adws"
+	"log"
 )
 
 const ouFilter = "(objectClass=organizationalUnit)"
@@ -16,9 +15,6 @@ func (e *Enumerator) OUs() ([]adws.ADObject, error) {
 
 	results, err := e.queryWithRetry(e.baseDN, ouFilter, ouAttrs, 7,
 		func(batch []adws.ADObject) error {
-			if e.verbose {
-				log.Printf("%s [*]   OUs: %d", ts(), len(batch))
-			}
 			e.pace.BetweenRequests()
 			return nil
 		},
