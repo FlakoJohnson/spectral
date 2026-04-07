@@ -674,8 +674,14 @@ func printFinding(f enum.ESCFinding, colour string) {
 		colour+bold, f.ESC, reset,
 		bold, target, reset)
 
-	for _, line := range wrap(f.Description, 68) {
-		fmt.Printf("    %s│%s %s\n", grey, reset, line)
+	for _, segment := range strings.Split(f.Description, "\n") {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			continue
+		}
+		for _, line := range wrap(segment, 68) {
+			fmt.Printf("    %s│%s %s\n", grey, reset, line)
+		}
 	}
 
 	if f.Note != "" {
