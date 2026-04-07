@@ -181,6 +181,50 @@ func (e *Enumerator) ResolveMembers(dns []string) []adws.ADObject {
 	return all
 }
 
+// ResolveSIDs batch-resolves a list of SIDs to full AD objects.
+// Uses domain root DN and minimal attrs. Chunks of 50 SIDs per query.
+func (e *Enumerator) ResolveSIDs(sids []string) []adws.ADObject {
+	if len(sids) == 0 {
+		return nil
+	}
+
+	// Minimal attrs — we just need name, type, SID for BH node creation.
+	resolveAttrs := []string{
+		"sAMAccountName", "distinguishedName", "objectSid", "objectGUID",
+		"objectClass", "userAccountControl", "adminCount", "description",
+		"whenCreated",
+	}
+
+	var all []adws.ADObject
+	chunkSize := 50
+	for i := 0; i < len(sids); i += chunkSize {
+		end := i + chunkSize
+		if end > len(sids) {
+			end = len(sids)
+		}
+		chunk := sids[i:end]
+
+		var parts []string
+		for _, sid := range chunk {
+			// Convert SID string to binary for objectSid filter.
+			// Use the SID directly — AD accepts string SID in filters on objectSid.
+			parts = append(parts, fmt.Sprintf("(objectSid=%s)", sid))
+		}
+		filter := fmt.Sprintf("(|%s)", strings.Join(parts, ""))
+
+		objs, err := e.client.Query(e.domainDN, filter, resolveAttrs, adws.ScopeSubtree)
+		if err != nil {
+			if e.verbose {
+				log.Printf("%s [*] SID resolve chunk failed: %v", ts(), err)
+			}
+			continue
+		}
+		all = append(all, objs...)
+		e.pace.BetweenRequests()
+	}
+	return all
+}
+
 // prepFilter applies stealth obfuscation to a filter if enabled.
 func (e *Enumerator) prepFilter(filter string) string {
 	if e.stealth {

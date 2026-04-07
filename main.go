@@ -285,6 +285,8 @@ func main() {
 		if len(coll.groups) > 0 {
 			coll.resolveGroupMembers(e)
 		}
+		// Resolve unknown ACE principal SIDs so inbound object control shows names.
+		coll.resolveACEPrincipals(e)
 		if err := output.WriteBHZip(
 			*outDir, filePrefix, *domain, domainSID,
 			coll.users, coll.computers, coll.groups, coll.gpos, coll.trusts,
@@ -364,6 +366,79 @@ func (c *collector) resolveGroupMembers(e *enum.Enumerator) {
 			}
 		}
 		log.Printf("%s [+] Resolved %d/%d member DNs to SIDs", ts(), len(resolved), len(unresolved))
+	}
+}
+
+// resolveACEPrincipals queries ADWS for ACE principal SIDs that don't exist
+// as nodes in the collected data. Without this, BH shows inbound object control
+// edges from orphan SID-only nodes with no name or type.
+func (c *collector) resolveACEPrincipals(e *enum.Enumerator) {
+	// Build index of known SIDs.
+	knownSIDs := make(map[string]bool)
+	for _, objs := range [][]adws.ADObject{c.users, c.computers, c.groups} {
+		for _, obj := range objs {
+			sid := enum.SIDStr(obj, "objectSid")
+			if sid != "" {
+				knownSIDs[sid] = true
+			}
+		}
+	}
+
+	// Collect unique unknown SIDs from ACEs across all objects.
+	unknownSIDs := make(map[string]bool)
+	for _, objs := range [][]adws.ADObject{c.users, c.computers, c.groups} {
+		for _, obj := range objs {
+			sd := enum.ParseSD(enum.AttrStr(obj, "nTSecurityDescriptor"))
+			if sd == nil {
+				continue
+			}
+			for _, aces := range [][]enum.ACEInfo{sd.Enrollers, sd.Writers, sd.FullControl} {
+				for _, ace := range aces {
+					if ace.SID != "" && !knownSIDs[ace.SID] && strings.HasPrefix(ace.SID, "S-1-5-21-") {
+						unknownSIDs[ace.SID] = true
+					}
+				}
+			}
+			if sd.OwnerSID != "" && !knownSIDs[sd.OwnerSID] && strings.HasPrefix(sd.OwnerSID, "S-1-5-21-") {
+				unknownSIDs[sd.OwnerSID] = true
+			}
+		}
+	}
+
+	if len(unknownSIDs) == 0 {
+		return
+	}
+
+	log.Printf("%s [*] Resolving %d unknown ACE principal SIDs via ADWS", ts(), len(unknownSIDs))
+
+	var sids []string
+	for sid := range unknownSIDs {
+		sids = append(sids, sid)
+	}
+
+	resolved := e.ResolveSIDs(sids)
+	if len(resolved) > 0 {
+		for _, obj := range resolved {
+			classes := enum.AttrSliceStr(obj, "objectClass")
+			isComputer := false
+			isGroup := false
+			for _, cls := range classes {
+				switch strings.ToLower(cls) {
+				case "computer":
+					isComputer = true
+				case "group":
+					isGroup = true
+				}
+			}
+			if isComputer {
+				c.computers = append(c.computers, obj)
+			} else if isGroup {
+				c.groups = append(c.groups, obj)
+			} else {
+				c.users = append(c.users, obj)
+			}
+		}
+		log.Printf("%s [+] Resolved %d/%d ACE principal SIDs", ts(), len(resolved), len(unknownSIDs))
 	}
 }
 
