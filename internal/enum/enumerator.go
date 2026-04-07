@@ -163,14 +163,19 @@ func (e *Enumerator) ResolveMembers(dns []string) []adws.ADObject {
 		}
 		filter := fmt.Sprintf("(|%s)", strings.Join(parts, ""))
 
-		objs, err := e.client.Query(e.domainDN, filter, memberLookupAttrs, adws.ScopeSubtree)
+		err := e.client.QueryBatchedWithSDFlags(
+			e.domainDN, filter, memberLookupAttrs, adws.ScopeSubtree,
+			10, 7, // small batch + OWNER|GROUP|DACL
+			func(batch []adws.ADObject) error {
+				all = append(all, batch...)
+				return nil
+			},
+		)
 		if err != nil {
 			if e.verbose {
 				log.Printf("%s [*] Member resolve chunk failed: %v", ts(), err)
 			}
-			continue
 		}
-		all = append(all, objs...)
 		e.pace.BetweenRequests()
 	}
 	return all
