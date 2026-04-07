@@ -42,7 +42,7 @@ func (e *Enumerator) LookupUser(sam string) (*SingleResult, error) {
 	}
 
 	filter := fmt.Sprintf("(&(objectCategory=person)(objectClass=user)(sAMAccountName=%s))",
-		escapeLDAP(sam))
+		escapeLDAPKeepWild(sam))
 
 	objs, err := e.client.Query(e.baseDN, filter, singleUserAttrs, adws.ScopeSubtree)
 	if err != nil {
@@ -67,7 +67,7 @@ func (e *Enumerator) LookupComputer(name string) (*SingleResult, error) {
 
 	// Normalise: strip trailing $ if provided, LDAP sam for computers ends in $.
 	sam := strings.TrimSuffix(name, "$") + "$"
-	filter := fmt.Sprintf("(&(objectClass=computer)(sAMAccountName=%s))", escapeLDAP(sam))
+	filter := fmt.Sprintf("(&(objectClass=computer)(sAMAccountName=%s))", escapeLDAPKeepWild(sam))
 
 	objs, err := e.client.Query(e.baseDN, filter, singleComputerAttrs, adws.ScopeSubtree)
 	if err != nil {
@@ -84,11 +84,20 @@ func (e *Enumerator) LookupComputer(name string) (*SingleResult, error) {
 
 // LookupGroup fetches a single group by name and resolves its direct members.
 func (e *Enumerator) LookupGroup(name string) (*SingleResult, error) {
+	results, err := e.LookupGroups(name)
+	if err != nil {
+		return nil, err
+	}
+	return results[0], nil
+}
+
+// LookupGroups fetches groups matching name (supports * wildcards) and resolves members.
+func (e *Enumerator) LookupGroups(name string) ([]*SingleResult, error) {
 	if e.verbose {
 		log.Printf("%s [*] Lookup group: %s", ts(), name)
 	}
 
-	filter := fmt.Sprintf("(&(objectCategory=group)(sAMAccountName=%s))", escapeLDAP(name))
+	filter := fmt.Sprintf("(&(objectCategory=group)(sAMAccountName=%s))", escapeLDAPKeepWild(name))
 
 	objs, err := e.client.Query(e.baseDN, filter, groupAttrs, adws.ScopeSubtree)
 	if err != nil {
@@ -98,31 +107,35 @@ func (e *Enumerator) LookupGroup(name string) (*SingleResult, error) {
 		return nil, fmt.Errorf("group not found: %s", name)
 	}
 
-	result := &SingleResult{Object: objs[0]}
+	var results []*SingleResult
+	for _, obj := range objs {
+		result := &SingleResult{Object: obj}
 
-	// Resolve members — single batch query with combined attrs (1 ADWS request).
-	memberDNs := attrSlice(objs[0], "member")
-	if e.verbose {
-		log.Printf("%s [*]   members: %d", ts(), len(memberDNs))
+		// Resolve members — single batch query with combined attrs (1 ADWS request).
+		memberDNs := attrSlice(obj, "member")
+		if e.verbose {
+			sam := AttrStr(obj, "sAMAccountName")
+			log.Printf("%s [*]   %s: %d members", ts(), sam, len(memberDNs))
+		}
+
+		if len(memberDNs) > 0 {
+			var filterParts []string
+			for _, dn := range memberDNs {
+				filterParts = append(filterParts, fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn)))
+			}
+			batchFilter := fmt.Sprintf("(|%s)", strings.Join(filterParts, ""))
+
+			memberObjs, err := e.client.Query(e.domainDN, batchFilter, memberLookupAttrs, adws.ScopeSubtree)
+			if err == nil {
+				result.GroupMember = memberObjs
+			}
+		}
+
+		results = append(results, result)
+		e.pace.BetweenRequests()
 	}
 
-	if len(memberDNs) > 0 {
-		// Build OR filter for all member DNs in one query.
-		var filterParts []string
-		for _, dn := range memberDNs {
-			filterParts = append(filterParts, fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn)))
-		}
-		batchFilter := fmt.Sprintf("(|%s)", strings.Join(filterParts, ""))
-
-		// Combined attribute set — superset of user + computer + group attrs.
-		// Single query, ADWS returns only attrs that exist on each object.
-		memberObjs, err := e.client.Query(e.baseDN, batchFilter, memberLookupAttrs, adws.ScopeSubtree)
-		if err == nil {
-			result.GroupMember = memberObjs
-		}
-	}
-
-	return result, nil
+	return results, nil
 }
 
 // LookupOU enumerates all direct children of an OU distinguished name.
@@ -190,6 +203,17 @@ func attrSlice(obj adws.ADObject, name string) []string { return AttrSliceStr(ob
 
 // escapeLDAP escapes special characters in an LDAP filter value.
 // Prevents filter injection when user-supplied names are used.
+// escapeLDAPKeepWild escapes LDAP special chars but preserves * for wildcard searches.
+func escapeLDAPKeepWild(s string) string {
+	replacer := strings.NewReplacer(
+		`\`, `\5c`,
+		`(`, `\28`,
+		`)`, `\29`,
+		"\x00", `\00`,
+	)
+	return replacer.Replace(s)
+}
+
 func escapeLDAP(s string) string {
 	replacer := strings.NewReplacer(
 		`\`, `\5c`,
