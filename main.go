@@ -300,8 +300,21 @@ func main() {
 		len(coll.ous) > 0 || coll.domainInfo != nil
 	if *bhOut || hasBHData {
 		domainSID := coll.domainSID
+		// Auto-fetch domain SID via ADCAP if not yet resolved.
+		if domainSID == "" && coll.domainInfo == nil {
+			if di, derr := e.Domain(); derr == nil {
+				coll.domainInfo = di
+				if d, ok := di.Domain.(*sopa.ADCAPActiveDirectoryDomain); ok && d != nil && d.DomainSID != "" {
+					if strings.HasPrefix(d.DomainSID, "S-1-") {
+						domainSID = d.DomainSID
+					} else if raw, err := base64.StdEncoding.DecodeString(d.DomainSID); err == nil && len(raw) >= 8 {
+						domainSID = adws.ConvertSID(raw)
+					}
+				}
+			}
+		}
 		if domainSID == "" && !*quiet {
-			log.Printf("%s [*] domain SID not resolved (run with -m sweep or -m users to populate)", ts())
+			log.Printf("%s [*] domain SID not resolved", ts())
 		}
 		// Resolve unresolved group member DNs to SIDs via ADWS.
 		// DN= stubs in BH create orphan nodes that never merge with SID-based nodes.
