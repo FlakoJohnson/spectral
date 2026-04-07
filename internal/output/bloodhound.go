@@ -1,9 +1,9 @@
 package output
 
-// bloodhound.go — converts collected AD objects to BloodHound CE v5 JSON format.
+// bloodhound.go — converts collected AD objects to BloodHound CE v6 JSON format.
 //
 // BH CE expects one file per object type, each with:
-//   { "data": [...], "meta": { "methods": N, "type": "users", "count": N, "version": 5 } }
+//   { "data": [...], "meta": { "methods": N, "type": "users", "count": N, "version": 6 } }
 //
 // All files are zipped into a single archive for drag-and-drop import.
 
@@ -386,6 +386,7 @@ func (c *BHConverter) ConvertUsers(objects []adws.ADObject) []bhUser {
 				LastLogonTimestamp:    fileTimeToUnix(enum.AttrStr(obj, "lastLogonTimestamp")),
 				PwdLastSet:            fileTimeToUnix(enum.AttrStr(obj, "pwdLastSet")),
 				WhenCreated:           parseWhenCreated(enum.AttrStr(obj, "whenCreated")),
+				HighValue:             parseInt64(enum.AttrStr(obj, "adminCount")) == 1,
 			},
 		}
 		out = append(out, u)
@@ -505,6 +506,7 @@ func (c *BHConverter) ConvertGroups(objects []adws.ADObject) []bhGroup {
 				Description:       enum.AttrStr(obj, "description"),
 				AdminCount:        parseInt64(enum.AttrStr(obj, "adminCount")) == 1,
 				WhenCreated:       parseWhenCreated(enum.AttrStr(obj, "whenCreated")),
+				HighValue:         isHighValueGroup(sid),
 			},
 		}
 		out = append(out, g)
@@ -754,6 +756,14 @@ func sdToBHAces(obj adws.ADObject, dnToSID map[string]string, dnToType map[strin
 		guid  string // for object-specific ACEs
 	}
 
+	// Build reverse SID→Type index for efficient principal type lookup.
+	sidToType := make(map[string]string, len(dnToSID))
+	for dn, sid := range dnToSID {
+		if t, ok := dnToType[dn]; ok {
+			sidToType[sid] = t
+		}
+	}
+
 	for _, sdAce := range append(append(sd.Enrollers, sd.Writers...), sd.FullControl...) {
 		if sdAce.Type != "Allow" {
 			continue
@@ -762,26 +772,40 @@ func sdToBHAces(obj adws.ADObject, dnToSID map[string]string, dnToType map[strin
 		principalSID := sdAce.SID
 		principalType := "Base" // default
 
-		// Try to determine principal type from our index
-		for dn, sid := range dnToSID {
-			if sid == principalSID {
-				if t, ok := dnToType[dn]; ok {
-					principalType = t
-				}
-				break
-			}
+		// Check our collected objects index
+		if t, ok := sidToType[principalSID]; ok {
+			principalType = t
 		}
 
 		// Well-known SID types
-		switch {
-		case strings.HasSuffix(principalSID, "-513"), strings.HasSuffix(principalSID, "-512"),
-			strings.HasSuffix(principalSID, "-519"), strings.HasSuffix(principalSID, "-518"):
-			principalType = "Group"
-		case principalSID == "S-1-5-11", principalSID == "S-1-1-0", principalSID == "S-1-5-32-544",
-			principalSID == "S-1-5-32-545":
-			principalType = "Group"
-		case principalSID == "S-1-5-18":
-			principalType = "User"
+		if principalType == "Base" {
+			switch {
+			case principalSID == "S-1-5-18": // SYSTEM
+				principalType = "User"
+			case principalSID == "S-1-5-11", principalSID == "S-1-1-0", principalSID == "S-1-5-9",
+				principalSID == "S-1-5-32-544", principalSID == "S-1-5-32-545",
+				principalSID == "S-1-5-32-548", principalSID == "S-1-5-32-549",
+				principalSID == "S-1-5-32-550", principalSID == "S-1-5-32-551",
+				principalSID == "S-1-5-32-552", principalSID == "S-1-5-32-555",
+				principalSID == "S-1-5-32-556", principalSID == "S-1-5-32-562",
+				principalSID == "S-1-5-32-568", principalSID == "S-1-5-32-569",
+				principalSID == "S-1-5-32-573", principalSID == "S-1-5-32-574",
+				principalSID == "S-1-5-32-575", principalSID == "S-1-5-32-576",
+				principalSID == "S-1-5-32-577", principalSID == "S-1-5-32-578",
+				principalSID == "S-1-5-32-580", principalSID == "S-1-5-32-582":
+				principalType = "Group"
+			default:
+				// Domain-specific well-known RIDs
+				if idx := strings.LastIndex(principalSID, "-"); idx > 0 {
+					switch principalSID[idx+1:] {
+					case "512", "513", "514", "515", "516", "517", "518", "519",
+						"520", "521", "522", "525", "526", "527", "553", "571", "572":
+						principalType = "Group"
+					case "500", "501", "502": // Administrator, Guest, krbtgt
+						principalType = "User"
+					}
+				}
+			}
 		}
 
 		mask := sdAce.AccessMask
@@ -799,24 +823,32 @@ func sdToBHAces(obj adws.ADObject, dnToSID map[string]string, dnToType map[strin
 		if mask&0x00080000 != 0 { // WriteOwner
 			aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "WriteOwner", IsInherited: false})
 		}
-		if mask&0x00000100 != 0 { // Extended rights
-			if sdAce.ObjectGUID == "" {
+		objGUID := strings.ToLower(sdAce.ObjectGUID)
+		if mask&0x00000100 != 0 { // Extended rights (ADS_RIGHT_DS_CONTROL_ACCESS)
+			switch objGUID {
+			case "":
 				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "AllExtendedRights", IsInherited: false})
-			} else if sdAce.ObjectGUID == "00299570-246d-11d0-a768-00aa006e0529" {
+			case "00299570-246d-11d0-a768-00aa006e0529":
 				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "ForceChangePassword", IsInherited: false})
+			case "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2":
+				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "GetChanges", IsInherited: false})
+			case "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2":
+				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "GetChangesAll", IsInherited: false})
+			case "1131f6ae-9c07-11d1-f79f-00c04fc2dcd2":
+				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "GetChangesInFilteredSet", IsInherited: false})
 			}
 		}
 		if mask&0x00000020 != 0 { // WriteProperty
-			if sdAce.ObjectGUID == "bf9679c0-0de6-11d0-a285-00aa003049e2" {
-				// member attribute
+			switch objGUID {
+			case "bf9679c0-0de6-11d0-a285-00aa003049e2":
 				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "AddMember", IsInherited: false})
+			case "f3a64788-5306-11d1-a9c5-0000f80367c1":
+				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "WriteSPN", IsInherited: false})
+			case "4c164200-20c0-11d0-a768-00aa006e0529":
+				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "AddKeyCredentialLink", IsInherited: false})
+			case "":
+				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "GenericWrite", IsInherited: false})
 			}
-		}
-		if mask&0x00000100 != 0 && sdAce.ObjectGUID == "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2" {
-			aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "GetChanges", IsInherited: false})
-		}
-		if mask&0x00000100 != 0 && sdAce.ObjectGUID == "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2" {
-			aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "GetChangesAll", IsInherited: false})
 		}
 	}
 
@@ -960,6 +992,36 @@ func extractGPOGUID(dn string) string {
 		return ""
 	}
 	return strings.ToLower(dn[start : start+end+1])
+}
+
+// isHighValueGroup returns true for well-known privileged group RIDs.
+func isHighValueGroup(sid string) bool {
+	// Well-known high-value builtin groups
+	switch sid {
+	case "S-1-5-32-544", // Administrators
+		"S-1-5-32-548", // Account Operators
+		"S-1-5-32-549", // Server Operators
+		"S-1-5-32-550", // Print Operators
+		"S-1-5-32-551": // Backup Operators
+		return true
+	}
+	// Domain-specific high-value RIDs
+	idx := strings.LastIndex(sid, "-")
+	if idx < 0 {
+		return false
+	}
+	switch sid[idx+1:] {
+	case "512", // Domain Admins
+		"516", // Domain Controllers
+		"518", // Schema Admins
+		"519", // Enterprise Admins
+		"520", // Group Policy Creator Owners
+		"521", // Read-only Domain Controllers
+		"526", // Key Admins
+		"527": // Enterprise Key Admins
+		return true
+	}
+	return false
 }
 
 // parseGPLinks parses the AD gPLink attribute into BH GPOLink entries.

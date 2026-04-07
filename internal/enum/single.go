@@ -53,7 +53,7 @@ func (e *Enumerator) LookupUsers(sam string) ([]*SingleResult, error) {
 	filter := fmt.Sprintf("(&(objectCategory=person)(objectClass=user)(sAMAccountName=%s))",
 		escapeLDAPKeepWild(sam))
 
-	objs, err := e.client.Query(e.baseDN, filter, singleUserAttrs, adws.ScopeSubtree)
+	objs, err := e.client.Query(e.baseDN, e.prepFilter(filter), e.prepAttrs(singleUserAttrs), adws.ScopeSubtree)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func (e *Enumerator) LookupComputers(name string) ([]*SingleResult, error) {
 	}
 	filter := fmt.Sprintf("(&(objectClass=computer)(sAMAccountName=%s))", escapeLDAPKeepWild(sam))
 
-	objs, err := e.client.Query(e.baseDN, filter, singleComputerAttrs, adws.ScopeSubtree)
+	objs, err := e.client.Query(e.baseDN, e.prepFilter(filter), e.prepAttrs(singleComputerAttrs), adws.ScopeSubtree)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (e *Enumerator) LookupGroups(name string) ([]*SingleResult, error) {
 
 	filter := fmt.Sprintf("(&(objectCategory=group)(sAMAccountName=%s))", escapeLDAPKeepWild(name))
 
-	objs, err := e.client.Query(e.baseDN, filter, groupAttrs, adws.ScopeSubtree)
+	objs, err := e.client.Query(e.baseDN, e.prepFilter(filter), e.prepAttrs(groupAttrs), adws.ScopeSubtree)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func (e *Enumerator) LookupGroups(name string) ([]*SingleResult, error) {
 			}
 			batchFilter := fmt.Sprintf("(|%s)", strings.Join(filterParts, ""))
 
-			memberObjs, err := e.client.Query(e.domainDN, batchFilter, memberLookupAttrs, adws.ScopeSubtree)
+			memberObjs, err := e.client.Query(e.domainDN, e.prepFilter(batchFilter), e.prepAttrs(memberLookupAttrs), adws.ScopeSubtree)
 			if err == nil {
 				result.GroupMember = memberObjs
 			}
@@ -179,7 +179,7 @@ func (e *Enumerator) LookupOU(ouDN string) ([]adws.ADObject, error) {
 		"objectSid", "userAccountControl", "dNSHostName",
 	}
 
-	return e.client.Query(ouDN, filter, attrs, adws.ScopeOneLevel)
+	return e.client.Query(ouDN, e.prepFilter(filter), e.prepAttrs(attrs), adws.ScopeOneLevel)
 }
 
 // -------------------------------------------------------------------------
@@ -198,8 +198,8 @@ func (e *Enumerator) resolveGroupDNs(dns []string) ([]adws.ADObject, error) {
 	for _, dn := range dns {
 		objs, err := e.client.Query(
 			e.baseDN,
-			fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn)),
-			attrs,
+			e.prepFilter(fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn))),
+			e.prepAttrs(attrs),
 			adws.ScopeSubtree,
 		)
 		if err != nil || len(objs) == 0 {
