@@ -515,7 +515,13 @@ func (c *BHConverter) ConvertGroups(objects []adws.ADObject) []bhGroup {
 func (c *BHConverter) ConvertGPOs(objects []adws.ADObject) []bhGPO {
 	out := make([]bhGPO, 0, len(objects))
 	for _, obj := range objects {
-		guid := convertGUID(enum.AttrStr(obj, "objectGUID"))
+		// Use the GPO GUID from DN (CN={GUID},...) — this matches gPLink references.
+		// Fall back to objectGUID if DN parsing fails.
+		dn := enum.AttrStr(obj, "distinguishedName")
+		guid := extractGPOGUID(dn)
+		if guid == "" {
+			guid = convertGUID(enum.AttrStr(obj, "objectGUID"))
+		}
 		if guid == "" {
 			continue
 		}
@@ -938,6 +944,22 @@ func extractFSPSID(dn string) string {
 		return cn
 	}
 	return ""
+}
+
+// extractGPOGUID extracts the GPO GUID from a GPO's distinguished name.
+// e.g. "CN={6AC1786C-016F-11D2-945F-00C04FB984F9},CN=Policies,..." → "{6ac1786c-016f-11d2-945f-00c04fb984f9}"
+func extractGPOGUID(dn string) string {
+	upper := strings.ToUpper(dn)
+	idx := strings.Index(upper, "CN={")
+	if idx < 0 {
+		return ""
+	}
+	start := idx + 3 // skip "CN="
+	end := strings.Index(dn[start:], "}")
+	if end < 0 {
+		return ""
+	}
+	return strings.ToLower(dn[start : start+end+1])
 }
 
 // parseGPLinks parses the AD gPLink attribute into BH GPOLink entries.

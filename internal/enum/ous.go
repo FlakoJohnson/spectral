@@ -14,7 +14,7 @@ func (e *Enumerator) OUs() ([]adws.ADObject, error) {
 		log.Printf("%s [*] Enumerating OUs", ts())
 	}
 
-	results, err := e.queryWithRetry(e.baseDN, ouFilter, ouAttrs, 0,
+	results, err := e.queryWithRetry(e.baseDN, ouFilter, ouAttrs, 7,
 		func(batch []adws.ADObject) error {
 			if e.verbose {
 				log.Printf("%s [*]   OUs: %d", ts(), len(batch))
