@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"log"
@@ -8,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	sopa "github.com/Macmod/sopa"
 
 	"spectral/internal/adws"
 	"spectral/internal/enum"
@@ -467,6 +470,16 @@ func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays in
 		res.data, res.err = data, err
 		if err == nil {
 			coll.domainInfo = data
+			// Extract domain SID from ADCAP data.
+			if coll.domainSID == "" {
+				if d, ok := data.Domain.(*sopa.ADCAPActiveDirectoryDomain); ok && d != nil && d.DomainSID != "" {
+					if strings.HasPrefix(d.DomainSID, "S-1-") {
+						coll.domainSID = d.DomainSID
+					} else if raw, derr := base64.StdEncoding.DecodeString(d.DomainSID); derr == nil && len(raw) >= 8 {
+						coll.domainSID = adws.ConvertSID(raw)
+					}
+				}
+			}
 		}
 	case "computers":
 		data, err := e.Computers()
