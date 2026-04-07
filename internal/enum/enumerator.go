@@ -78,9 +78,9 @@ func isADWSTooBig(err error) bool {
 		strings.Contains(msg, "broken pipe") || strings.Contains(msg, "connection reset")
 }
 
-// queryWithRetry runs a batched query and retries with smaller batch size
-// if ADWS rejects the response as too large (DIR_ERROR 5012 / Win32 8224).
-// Retry sequence: original batch → batch=10 → batch=10 without nTSecurityDescriptor.
+// queryWithRetry runs a batched query and retries with progressively smaller
+// batch sizes if ADWS rejects the response as too large.
+// Never drops nTSecurityDescriptor — keeps halving batch size until it works.
 func (e *Enumerator) queryWithRetry(
 	baseDN, filter string, attrs []string, sdFlags int,
 	callback func([]adws.ADObject) error,
@@ -96,48 +96,29 @@ func (e *Enumerator) queryWithRetry(
 
 	prepF := e.prepFilter(filter)
 	prepA := e.prepAttrs(attrs)
-	batchSize := e.batch()
 
-	// Attempt 1: normal batch with SD flags
-	var err error
-	if sdFlags > 0 {
-		err = e.client.QueryBatchedWithSDFlags(baseDN, prepF, prepA, adws.ScopeSubtree, batchSize, sdFlags, cb)
-	} else {
-		err = e.client.QueryBatched(baseDN, prepF, prepA, adws.ScopeSubtree, batchSize, cb)
-	}
+	// Try progressively smaller batch sizes: normal → 10 → 5 → 2 → 1
+	batches := []int{e.batch(), 10, 5, 2, 1}
+	for i, batchSize := range batches {
+		results = nil
+		var err error
+		if sdFlags > 0 {
+			err = e.client.QueryBatchedWithSDFlags(baseDN, prepF, prepA, adws.ScopeSubtree, batchSize, sdFlags, cb)
+		} else {
+			err = e.client.QueryBatched(baseDN, prepF, prepA, adws.ScopeSubtree, batchSize, cb)
+		}
 
-	if !isADWSTooBig(err) {
-		return results, err
-	}
+		if !isADWSTooBig(err) {
+			return results, err
+		}
 
-	// Attempt 2: small batch (10) with SD flags
-	if e.verbose {
-		log.Printf("%s [*] ADWS response too large (batch=%d), retrying with batch=10", ts(), batchSize)
-	}
-	results = nil
-	if sdFlags > 0 {
-		err = e.client.QueryBatchedWithSDFlags(baseDN, prepF, prepA, adws.ScopeSubtree, 10, sdFlags, cb)
-	} else {
-		err = e.client.QueryBatched(baseDN, prepF, prepA, adws.ScopeSubtree, 10, cb)
-	}
-
-	if !isADWSTooBig(err) {
-		return results, err
-	}
-
-	// Attempt 3: small batch without nTSecurityDescriptor
-	if e.verbose {
-		log.Printf("%s [*] Still too large, retrying without nTSecurityDescriptor", ts())
-	}
-	results = nil
-	noSD := make([]string, 0, len(attrs))
-	for _, a := range attrs {
-		if a != "nTSecurityDescriptor" {
-			noSD = append(noSD, a)
+		if e.verbose && i < len(batches)-1 {
+			log.Printf("%s [*] ADWS response too large (batch=%d), retrying with batch=%d", ts(), batchSize, batches[i+1])
 		}
 	}
-	err = e.client.QueryBatched(baseDN, prepF, noSD, adws.ScopeSubtree, 10, cb)
-	return results, err
+
+	// All batch sizes failed — return last error
+	return results, fmt.Errorf("ADWS response too large even with batch=1")
 }
 
 // ResolveMembers batch-resolves a list of DNs to full AD objects.

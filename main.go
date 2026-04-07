@@ -492,7 +492,7 @@ func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays in
 		data, err := e.Users()
 		res.data, res.err = data, err
 		if err == nil {
-			coll.users = data
+			coll.users = append(coll.users, data...)
 			// Derive domainSID from first user SID (strip last RID component).
 			if len(data) > 0 && coll.domainSID == "" {
 				coll.domainSID = domainSIDFromObject(data[0])
@@ -519,7 +519,7 @@ func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays in
 		data, err := e.Computers()
 		res.data, res.err = data, err
 		if err == nil {
-			coll.computers = data
+			coll.computers = append(coll.computers, data...)
 			if coll.domainSID == "" && len(data) > 0 {
 				coll.domainSID = domainSIDFromObject(data[0])
 			}
@@ -528,7 +528,7 @@ func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays in
 		data, err := e.Groups()
 		res.data, res.err = data, err
 		if err == nil {
-			coll.groups = data
+			coll.groups = append(coll.groups, data...)
 			output.PrintGroups(data)
 			if coll.domainSID == "" && len(data) > 0 {
 				coll.domainSID = domainSIDFromObject(data[0])
@@ -538,19 +538,19 @@ func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays in
 		data, err := e.GPOs()
 		res.data, res.err = data, err
 		if err == nil {
-			coll.gpos = data
+			coll.gpos = append(coll.gpos, data...)
 		}
 	case "trusts":
 		data, err := e.Trusts()
 		res.data, res.err = data, err
 		if err == nil {
-			coll.trusts = data
+			coll.trusts = append(coll.trusts, data...)
 		}
 	case "ous":
 		data, err := e.OUs()
 		res.data, res.err = data, err
 		if err == nil {
-			coll.ous = data
+			coll.ous = append(coll.ous, data...)
 			output.PrintOUs(data)
 		}
 	default:
