@@ -37,6 +37,15 @@ var singleComputerAttrs = append(computerAttrs,
 
 // LookupUser fetches a single user by sAMAccountName and resolves their groups.
 func (e *Enumerator) LookupUser(sam string) (*SingleResult, error) {
+	results, err := e.LookupUsers(sam)
+	if err != nil {
+		return nil, err
+	}
+	return results[0], nil
+}
+
+// LookupUsers fetches users matching name (supports * wildcards) and resolves group memberships.
+func (e *Enumerator) LookupUsers(sam string) ([]*SingleResult, error) {
 	if e.verbose {
 		log.Printf("%s [*] Lookup user: %s", ts(), sam)
 	}
@@ -52,21 +61,36 @@ func (e *Enumerator) LookupUser(sam string) (*SingleResult, error) {
 		return nil, fmt.Errorf("user not found: %s", sam)
 	}
 
-	result := &SingleResult{Object: objs[0]}
-
-	// Resolve each memberOf DN to a full group object.
-	result.MemberOf, err = e.resolveGroupDNs(attrSlice(objs[0], "memberOf"))
-	return result, err
+	var results []*SingleResult
+	for _, obj := range objs {
+		result := &SingleResult{Object: obj}
+		result.MemberOf, _ = e.resolveGroupDNs(attrSlice(obj, "memberOf"))
+		results = append(results, result)
+	}
+	return results, nil
 }
 
 // LookupComputer fetches a single computer by sAMAccountName (with or without $).
 func (e *Enumerator) LookupComputer(name string) (*SingleResult, error) {
+	results, err := e.LookupComputers(name)
+	if err != nil {
+		return nil, err
+	}
+	return results[0], nil
+}
+
+// LookupComputers fetches computers matching name (supports * wildcards).
+func (e *Enumerator) LookupComputers(name string) ([]*SingleResult, error) {
 	if e.verbose {
 		log.Printf("%s [*] Lookup computer: %s", ts(), name)
 	}
 
 	// Normalise: strip trailing $ if provided, LDAP sam for computers ends in $.
-	sam := strings.TrimSuffix(name, "$") + "$"
+	// But preserve wildcards — don't append $ if name contains *.
+	sam := name
+	if !strings.Contains(name, "*") {
+		sam = strings.TrimSuffix(name, "$") + "$"
+	}
 	filter := fmt.Sprintf("(&(objectClass=computer)(sAMAccountName=%s))", escapeLDAPKeepWild(sam))
 
 	objs, err := e.client.Query(e.baseDN, filter, singleComputerAttrs, adws.ScopeSubtree)
@@ -77,9 +101,13 @@ func (e *Enumerator) LookupComputer(name string) (*SingleResult, error) {
 		return nil, fmt.Errorf("computer not found: %s", name)
 	}
 
-	result := &SingleResult{Object: objs[0]}
-	result.MemberOf, err = e.resolveGroupDNs(attrSlice(objs[0], "memberOf"))
-	return result, err
+	var results []*SingleResult
+	for _, obj := range objs {
+		result := &SingleResult{Object: obj}
+		result.MemberOf, _ = e.resolveGroupDNs(attrSlice(obj, "memberOf"))
+		results = append(results, result)
+	}
+	return results, nil
 }
 
 // LookupGroup fetches a single group by name and resolves its direct members.

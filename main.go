@@ -597,22 +597,28 @@ func runLookup(e *enum.Enumerator, w *output.Writer, spec string, coll *collecto
 
 	switch kind {
 	case "user":
-		result, gerr := e.LookupUser(name)
-		data, err = result, gerr
+		results, gerr := e.LookupUsers(name)
+		data, err = results, gerr
 		if gerr == nil {
-			output.PrintUserLookup(result)
-			if coll.domainSID == "" {
-				coll.domainSID = domainSIDFromObject(result.Object)
+			for _, result := range results {
+				output.PrintUserLookup(result)
+				if coll.domainSID == "" {
+					coll.domainSID = domainSIDFromObject(result.Object)
+				}
+				coll.users = append(coll.users, result.Object)
 			}
 		}
 		file = "lookup-user-" + sanitise(name) + ".json"
 	case "computer":
-		result, gerr := e.LookupComputer(name)
-		data, err = result, gerr
+		results, gerr := e.LookupComputers(name)
+		data, err = results, gerr
 		if gerr == nil {
-			output.PrintComputerLookup(result)
-			if coll.domainSID == "" {
-				coll.domainSID = domainSIDFromObject(result.Object)
+			for _, result := range results {
+				output.PrintComputerLookup(result)
+				if coll.domainSID == "" {
+					coll.domainSID = domainSIDFromObject(result.Object)
+				}
+				coll.computers = append(coll.computers, result.Object)
 			}
 		}
 		file = "lookup-computer-" + sanitise(name) + ".json"
