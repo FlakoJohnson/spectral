@@ -188,11 +188,11 @@ func (c *Client) QueryBatchedWithSDFlags(
 	callback func([]ADObject) error,
 ) error {
 	err := c.queryBatchedInnerSD(baseDN, filter, attrs, scope, batchSize, sdFlags, callback)
+	// Don't auto-reconnect for SD queries — broken pipe usually means the
+	// response is too large. Let the caller (queryWithRetry) handle fallback
+	// to smaller batch or no SD.
 	if err != nil && isBrokenPipe(err) {
-		if rerr := c.reconnect(); rerr != nil {
-			return fmt.Errorf("batch query failed and reconnect failed: %w (original: %v)", rerr, err)
-		}
-		return c.queryBatchedInnerSD(baseDN, filter, attrs, scope, batchSize, sdFlags, callback)
+		_ = c.reconnect() // reconnect for future queries but don't retry this one
 	}
 	return err
 }
