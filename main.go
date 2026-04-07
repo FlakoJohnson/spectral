@@ -297,7 +297,7 @@ func main() {
 	// or when explicitly requested with -bh.
 	hasBHData := len(coll.users) > 0 || len(coll.computers) > 0 ||
 		len(coll.groups) > 0 || len(coll.gpos) > 0 || len(coll.trusts) > 0 ||
-		coll.domainInfo != nil
+		len(coll.ous) > 0 || coll.domainInfo != nil
 	if *bhOut || hasBHData {
 		domainSID := coll.domainSID
 		if domainSID == "" && !*quiet {
@@ -312,7 +312,7 @@ func main() {
 		coll.resolveACEPrincipals(e)
 		if err := output.WriteBHZip(
 			*outDir, filePrefix, *domain, domainSID,
-			coll.users, coll.computers, coll.groups, coll.gpos, coll.trusts,
+			coll.users, coll.computers, coll.groups, coll.gpos, coll.trusts, coll.ous,
 			coll.domainInfo,
 		); err != nil {
 			log.Printf("%s [-] BloodHound zip: %v", ts(), err)
@@ -331,6 +331,7 @@ type collector struct {
 	groups     []adws.ADObject
 	gpos       []adws.ADObject
 	trusts     []adws.ADObject
+	ous        []adws.ADObject
 	domainSID  string
 	domainInfo *enum.DomainResult
 }
@@ -531,6 +532,13 @@ func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays in
 		res.data, res.err = data, err
 		if err == nil {
 			coll.trusts = data
+		}
+	case "ous":
+		data, err := e.OUs()
+		res.data, res.err = data, err
+		if err == nil {
+			coll.ous = data
+			output.PrintOUs(data)
 		}
 	default:
 		runMode(e, w, m, staleDays)

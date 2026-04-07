@@ -171,6 +171,27 @@ type bhGPOProps struct {
 	HighValue         bool   `json:"highvalue"`
 }
 
+type bhOU struct {
+	ObjectIdentifier string      `json:"ObjectIdentifier"`
+	Properties       bhOUProps   `json:"Properties"`
+	ChildObjects     []bhTypedID `json:"ChildObjects"`
+	Links            []bhGPOLink `json:"Links"`
+	Aces             []bhAce     `json:"Aces"`
+	ContainedBy      bhTypedID   `json:"ContainedBy"`
+	IsDeleted        bool        `json:"IsDeleted"`
+	IsACLProtected   bool        `json:"IsACLProtected"`
+}
+
+type bhOUProps struct {
+	Name              string `json:"name"`
+	Domain            string `json:"domain"`
+	DomainSID         string `json:"domainsid"`
+	DistinguishedName string `json:"distinguishedname"`
+	Description       string `json:"description"`
+	WhenCreated       int64  `json:"whencreated"`
+	HighValue         bool   `json:"highvalue"`
+}
+
 type bhDomain struct {
 	ObjectIdentifier string        `json:"ObjectIdentifier"`
 	Properties       bhDomainProps `json:"Properties"`
@@ -517,6 +538,51 @@ func (c *BHConverter) ConvertGPOs(objects []adws.ADObject) []bhGPO {
 	return out
 }
 
+func (c *BHConverter) ConvertOUs(objects []adws.ADObject) []bhOU {
+	out := make([]bhOU, 0, len(objects))
+	for _, obj := range objects {
+		guid := convertGUID(enum.AttrStr(obj, "objectGUID"))
+		if guid == "" {
+			continue
+		}
+		name := enum.AttrStr(obj, "name")
+		dn := enum.AttrStr(obj, "distinguishedName")
+
+		// Determine parent container from DN.
+		containedBy := bhTypedID{}
+		if parentDN := parentFromDN(dn); parentDN != "" {
+			upperParent := strings.ToUpper(parentDN)
+			if psid, ok := c.dnToSID[upperParent]; ok {
+				containedBy = bhTypedID{ObjectIdentifier: psid, ObjectType: c.dnToType[upperParent]}
+			} else {
+				// Parent is domain root or unknown OU — use domain SID if it matches
+				domainDN := dnFromDomain(c.domain)
+				if strings.EqualFold(parentDN, domainDN) && c.domainSID != "" {
+					containedBy = bhTypedID{ObjectIdentifier: c.domainSID, ObjectType: "Domain"}
+				}
+			}
+		}
+
+		ou := bhOU{
+			ObjectIdentifier: guid,
+			ChildObjects:     []bhTypedID{},
+			Links:            parseGPLinks(enum.AttrStr(obj, "gPLink")),
+			Aces:             sdToBHAces(obj, c.dnToSID, c.dnToType),
+			ContainedBy:      containedBy,
+			Properties: bhOUProps{
+				Name:              fmt.Sprintf("%s@%s", strings.ToUpper(name), c.domain),
+				Domain:            c.domain,
+				DomainSID:         c.domainSID,
+				DistinguishedName: strings.ToUpper(dn),
+				Description:       enum.AttrStr(obj, "description"),
+				WhenCreated:       parseWhenCreated(enum.AttrStr(obj, "whenCreated")),
+			},
+		}
+		out = append(out, ou)
+	}
+	return out
+}
+
 func (c *BHConverter) ConvertTrusts(objects []adws.ADObject) []bhTrust {
 	out := make([]bhTrust, 0, len(objects))
 	for _, obj := range objects {
@@ -546,7 +612,7 @@ func (c *BHConverter) ConvertTrusts(objects []adws.ADObject) []bhTrust {
 // WriteBHZip serialises all collected data as BH CE JSON files inside a zip.
 func WriteBHZip(
 	outDir, filePrefix, domain, domainSID string,
-	users, computers, groups, gpos, trusts []adws.ADObject,
+	users, computers, groups, gpos, trusts, ous []adws.ADObject,
 	domainInfo *enum.DomainResult,
 ) error {
 	c := NewBHConverter(domain, domainSID)
@@ -574,6 +640,7 @@ func WriteBHZip(
 	bhComps := c.ConvertComputers(computers)
 	bhGroups := c.ConvertGroups(groups)
 	bhGPOs := c.ConvertGPOs(gpos)
+	bhOUs := c.ConvertOUs(ous)
 	bhTrustsSlice := c.ConvertTrusts(trusts)
 
 
@@ -631,6 +698,7 @@ func WriteBHZip(
 		{"computers.json", "computers", bhMethodObjectProp | bhMethodACL, bhComps, len(bhComps)},
 		{"groups.json", "groups", bhMethodGroup | bhMethodObjectProp | bhMethodACL, bhGroups, len(bhGroups)},
 		{"gpos.json", "gpos", bhMethodObjectProp | bhMethodACL, bhGPOs, len(bhGPOs)},
+		{"ous.json", "ous", bhMethodObjectProp | bhMethodACL, bhOUs, len(bhOUs)},
 		{"domains.json", "domains", bhMethodObjectProp | bhMethodTrusts | bhMethodACL, []bhDomain{domainObj}, 1},
 	}
 
@@ -870,4 +938,64 @@ func extractFSPSID(dn string) string {
 		return cn
 	}
 	return ""
+}
+
+// parseGPLinks parses the AD gPLink attribute into BH GPOLink entries.
+// Format: [LDAP://CN={GUID},CN=Policies,CN=System,DC=...;flags][...]
+func parseGPLinks(gpLink string) []bhGPOLink {
+	if gpLink == "" {
+		return []bhGPOLink{}
+	}
+	var links []bhGPOLink
+	// Split on ][
+	for _, part := range strings.Split(gpLink, "[") {
+		part = strings.TrimSuffix(part, "]")
+		if part == "" {
+			continue
+		}
+		// Format: LDAP://CN={GUID},...;flags
+		semi := strings.LastIndex(part, ";")
+		if semi < 0 {
+			continue
+		}
+		ldapPath := part[:semi]
+		flagStr := part[semi+1:]
+
+		// Extract GUID from CN={GUID}
+		idx := strings.Index(strings.ToUpper(ldapPath), "CN={")
+		if idx < 0 {
+			continue
+		}
+		guidStart := idx + 3 // skip "CN="
+		guidEnd := strings.Index(ldapPath[guidStart:], "}")
+		if guidEnd < 0 {
+			continue
+		}
+		guid := strings.ToLower(ldapPath[guidStart : guidStart+guidEnd+1])
+
+		enforced := flagStr == "2" // 0=enabled, 1=disabled, 2=enforced
+		links = append(links, bhGPOLink{GUID: guid, IsEnforced: enforced})
+	}
+	return links
+}
+
+// parentFromDN extracts the parent DN from a distinguished name.
+// e.g. "OU=Servers,DC=corp,DC=local" → "DC=corp,DC=local"
+func parentFromDN(dn string) string {
+	idx := strings.Index(dn, ",")
+	if idx < 0 {
+		return ""
+	}
+	return dn[idx+1:]
+}
+
+// dnFromDomain builds a DN from a domain FQDN.
+// e.g. "CORP.LOCAL" → "DC=CORP,DC=LOCAL"
+func dnFromDomain(domain string) string {
+	parts := strings.Split(domain, ".")
+	dcs := make([]string, len(parts))
+	for i, p := range parts {
+		dcs[i] = "DC=" + p
+	}
+	return strings.Join(dcs, ",")
 }
