@@ -79,6 +79,15 @@ Proxy:
 `, os.Args[0])
 }
 
+// multiFlag allows a flag to be specified multiple times (e.g. -b X -b Y).
+type multiFlag []string
+
+func (f *multiFlag) String() string { return strings.Join(*f, ", ") }
+func (f *multiFlag) Set(v string) error {
+	*f = append(*f, v)
+	return nil
+}
+
 func main() {
 	var (
 		target    = flag.String("t", "", "")
@@ -89,7 +98,7 @@ func main() {
 		ntHash    = flag.String("H", "", "")
 		useKerb   = flag.Bool("k", false, "")
 		ccache    = flag.String("c", "", "")
-		baseDN    = flag.String("b", "", "")
+		baseDNs   multiFlag
 		mode      = flag.String("m", "", "")
 		targetObj = flag.String("T", "", "")
 		staleDays = flag.Int("A", 90, "")
@@ -109,6 +118,7 @@ func main() {
 
 	log.SetFlags(0) // disable default timestamp — we use our own
 
+	flag.Var(&baseDNs, "b", "")
 	flag.Usage = usage
 	flag.Parse()
 
@@ -245,16 +255,19 @@ func main() {
 	}
 
 	domainDN := domainToBaseDN(*domain)
-	if *baseDN == "" {
-		*baseDN = domainDN
+	if len(baseDNs) == 0 {
+		baseDNs = []string{domainDN}
 	}
 
-	var e *enum.Enumerator
-	if stealth {
-		e = enum.NewStealth(client, pace, *batchMin, *batchMax, *baseDN, domainDN, *target, !*quiet)
-	} else {
-		e = enum.New(client, pace, *batch, *baseDN, domainDN, *target, !*quiet)
+	// Create enumerator for the first (or only) baseDN.
+	makeEnum := func(baseDN string) *enum.Enumerator {
+		if stealth {
+			return enum.NewStealth(client, pace, *batchMin, *batchMax, baseDN, domainDN, *target, !*quiet)
+		}
+		return enum.New(client, pace, *batch, baseDN, domainDN, *target, !*quiet)
 	}
+
+	e := makeEnum(baseDNs[0])
 
 	// collector holds sweep results for optional BH output.
 	coll := &collector{}
@@ -265,10 +278,17 @@ func main() {
 	}
 
 	// ── Mode-based enumeration ──────────────────────────────────────────
-	for i, m := range modes {
-		runModeCollect(e, w, m, *staleDays, coll)
-		if i < len(modes)-1 {
-			pace.BetweenTypes()
+	// Run all modes for each -b scope, merging results into one collector.
+	for _, baseDN := range baseDNs {
+		e = makeEnum(baseDN)
+		if len(baseDNs) > 1 && !*quiet {
+			log.Printf("%s [*] Scope: %s", ts(), baseDN)
+		}
+		for i, m := range modes {
+			runModeCollect(e, w, m, *staleDays, coll)
+			if i < len(modes)-1 {
+				pace.BetweenTypes()
+			}
 		}
 	}
 
