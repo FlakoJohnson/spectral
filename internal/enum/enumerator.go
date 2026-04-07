@@ -67,13 +67,15 @@ func (e *Enumerator) batch() int {
 	return e.batchMin
 }
 
-// isADWSTooBig checks if an error is the ADWS "response too large" error.
+// isADWSTooBig checks if an error is the ADWS "response too large" error
+// or a broken pipe (connection dropped due to oversized response).
 func isADWSTooBig(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := err.Error()
-	return strings.Contains(msg, "DIR_ERROR") || strings.Contains(msg, "8224")
+	return strings.Contains(msg, "DIR_ERROR") || strings.Contains(msg, "8224") ||
+		strings.Contains(msg, "broken pipe") || strings.Contains(msg, "connection reset")
 }
 
 // queryWithRetry runs a batched query and retries with smaller batch size
