@@ -169,12 +169,10 @@ func (c *Client) QueryBatched(
 	callback func([]ADObject) error,
 ) error {
 	err := c.queryBatchedInner(baseDN, filter, attrs, scope, batchSize, callback)
+	// Don't auto-reconnect+retry for batched queries — broken pipe means
+	// response too large. Let queryWithRetry handle fallback.
 	if err != nil && isBrokenPipe(err) {
-		if rerr := c.reconnect(); rerr != nil {
-			return fmt.Errorf("batch query failed and reconnect failed: %w (original: %v)", rerr, err)
-		}
-		// Retry once after reconnect
-		return c.queryBatchedInner(baseDN, filter, attrs, scope, batchSize, callback)
+		_ = c.reconnect() // reconnect for future queries but don't retry
 	}
 	return err
 }
