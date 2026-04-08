@@ -593,6 +593,12 @@ func runMode(e *enum.Enumerator, w *output.Writer, m string, staleDays int) {
 		if err == nil {
 			output.PrintOUs(data)
 		}
+	case "machinequota":
+		quota, qerr := e.MachineQuota()
+		if qerr == nil {
+			log.Printf("%s [+] ms-DS-MachineAccountQuota: %s", ts(), quota)
+		}
+		res.data, res.err = quota, qerr
 	case "kerberoastable":
 		res.data, res.err = e.Kerberoastable()
 	case "asreproast":

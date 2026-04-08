@@ -3,6 +3,8 @@ package enum
 import (
 	"fmt"
 	"log"
+
+	"spectral/internal/adws"
 )
 
 // DomainResult holds domain and forest metadata.
@@ -30,4 +32,21 @@ func (e *Enumerator) Domain() (*DomainResult, error) {
 	}
 
 	return &DomainResult{Domain: domain, Forest: forest}, nil
+}
+
+// MachineQuota queries ms-DS-MachineAccountQuota from the domain root.
+func (e *Enumerator) MachineQuota() (string, error) {
+	objs, err := e.client.Query(
+		e.domainDN,
+		"(objectClass=domainDNS)",
+		[]string{"ms-DS-MachineAccountQuota"},
+		adws.ScopeBase,
+	)
+	if err != nil {
+		return "", err
+	}
+	if len(objs) == 0 {
+		return "", fmt.Errorf("domain root not found")
+	}
+	return AttrStr(objs[0], "ms-DS-MachineAccountQuota"), nil
 }
