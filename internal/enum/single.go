@@ -53,7 +53,7 @@ func (e *Enumerator) LookupUsers(sam string) ([]*SingleResult, error) {
 	filter := fmt.Sprintf("(&(objectCategory=person)(objectClass=user)(sAMAccountName=%s))",
 		escapeLDAPKeepWild(sam))
 
-	objs, err := e.client.Query(e.baseDN, e.prepFilter(filter), e.prepAttrs(singleUserAttrs), adws.ScopeSubtree)
+	objs, err := e.queryWithRetry(e.baseDN, filter, singleUserAttrs, 7, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func (e *Enumerator) LookupComputers(name string) ([]*SingleResult, error) {
 	}
 	filter := fmt.Sprintf("(&(objectClass=computer)(sAMAccountName=%s))", escapeLDAPKeepWild(sam))
 
-	objs, err := e.client.Query(e.baseDN, e.prepFilter(filter), e.prepAttrs(singleComputerAttrs), adws.ScopeSubtree)
+	objs, err := e.queryWithRetry(e.baseDN, filter, singleComputerAttrs, 7, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (e *Enumerator) LookupGroups(name string) ([]*SingleResult, error) {
 
 	filter := fmt.Sprintf("(&(objectCategory=group)(sAMAccountName=%s))", escapeLDAPKeepWild(name))
 
-	objs, err := e.client.Query(e.baseDN, e.prepFilter(filter), e.prepAttrs(groupAttrs), adws.ScopeSubtree)
+	objs, err := e.queryWithRetry(e.baseDN, filter, groupAttrs, 7, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -147,16 +147,7 @@ func (e *Enumerator) LookupGroups(name string) ([]*SingleResult, error) {
 		}
 
 		if len(memberDNs) > 0 {
-			var filterParts []string
-			for _, dn := range memberDNs {
-				filterParts = append(filterParts, fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn)))
-			}
-			batchFilter := fmt.Sprintf("(|%s)", strings.Join(filterParts, ""))
-
-			memberObjs, err := e.client.Query(e.domainDN, e.prepFilter(batchFilter), e.prepAttrs(memberLookupAttrs), adws.ScopeSubtree)
-			if err == nil {
-				result.GroupMember = memberObjs
-			}
+			result.GroupMember = e.ResolveMembers(memberDNs)
 		}
 
 		results = append(results, result)
