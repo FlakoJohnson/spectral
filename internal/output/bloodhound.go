@@ -528,7 +528,7 @@ func (c *BHConverter) ConvertGPOs(objects []adws.ADObject) []bhGPO {
 
 		gpo := bhGPO{
 			ObjectIdentifier: guid,
-			Aces:             []bhAce{},
+			Aces:             sdToBHAces(obj, c.dnToSID, c.dnToType),
 			Properties: bhGPOProps{
 				Name:              fmt.Sprintf("%s@%s", strings.ToUpper(name), c.domain),
 				Domain:            c.domain,
