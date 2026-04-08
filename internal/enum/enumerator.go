@@ -155,17 +155,21 @@ func (e *Enumerator) ResolveMembers(dns []string) []adws.ADObject {
 			},
 		)
 		if err != nil {
-			// Retry without SD flags — at least get the SIDs
+			// Retry one-by-one with SD flags — never drop ACLs
 			if e.verbose {
-				log.Printf("%s [*] Member resolve chunk failed, retrying without SD: %v", ts(), err)
+				log.Printf("%s [*] Member resolve batch failed, retrying individually: %v", ts(), err)
 			}
-			_ = e.client.QueryBatched(
-				e.domainDN, filter, memberLookupAttrs, adws.ScopeSubtree, 10,
-				func(batch []adws.ADObject) error {
-					all = append(all, batch...)
-					return nil
-				},
-			)
+			for _, dn := range chunk {
+				singleFilter := fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn))
+				_ = e.client.QueryBatchedWithSDFlags(
+					e.domainDN, singleFilter, memberLookupAttrs, adws.ScopeSubtree,
+					1, 7,
+					func(batch []adws.ADObject) error {
+						all = append(all, batch...)
+						return nil
+					},
+				)
+			}
 		}
 		e.pace.BetweenRequests()
 	}
