@@ -75,12 +75,14 @@ func isADWSTooBig(err error) bool {
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "DIR_ERROR") || strings.Contains(msg, "8224") ||
-		strings.Contains(msg, "broken pipe") || strings.Contains(msg, "connection reset")
+		strings.Contains(msg, "broken pipe") || strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "EndpointUnavailable") || strings.Contains(msg, "NoConnectionAvailable")
 }
 
 // queryWithRetry runs a batched query and retries with progressively smaller
 // batch sizes if ADWS rejects the response as too large.
-// Never drops nTSecurityDescriptor — keeps halving batch size until it works.
+// If sdFlags=7 fails at batch=1, falls back to sdFlags=4 (DACL only) to get
+// ACEs without owner info. Logs when fallback is used.
 func (e *Enumerator) queryWithRetry(
 	baseDN, filter string, attrs []string, sdFlags int,
 	callback func([]adws.ADObject) error,
@@ -117,8 +119,21 @@ func (e *Enumerator) queryWithRetry(
 		}
 	}
 
-	// All batch sizes failed — return last error
-	return results, fmt.Errorf("ADWS response too large even with batch=1")
+	// sdFlags=7 at batch=1 still too large — fall back to sdFlags=4 (DACL only).
+	// Loses Owns edge but keeps all permission ACEs.
+	if sdFlags > 4 {
+		log.Printf("%s [*] SD too large with sdFlags=%d, falling back to sdFlags=4 (DACL only)", ts(), sdFlags)
+		for _, batchSize := range batches {
+			results = nil
+			err := e.client.QueryBatchedWithSDFlags(baseDN, prepF, prepA, adws.ScopeSubtree, batchSize, 4, cb)
+			if !isADWSTooBig(err) {
+				return results, err
+			}
+		}
+	}
+
+	// All attempts failed — return error
+	return results, fmt.Errorf("ADWS response too large even with batch=1 sdFlags=4")
 }
 
 // ResolveMembers batch-resolves a list of DNs to full AD objects.

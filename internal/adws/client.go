@@ -114,6 +114,8 @@ func isBrokenPipe(err error) bool {
 		strings.Contains(s, "connection reset") ||
 		strings.Contains(s, "connection timed out") ||
 		strings.Contains(s, "connection refused") ||
+		strings.Contains(s, "EndpointUnavailable") ||
+		strings.Contains(s, "NoConnectionAvailable") ||
 		strings.Contains(s, "EOF")
 }
 
