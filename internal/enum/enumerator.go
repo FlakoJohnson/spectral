@@ -123,16 +123,20 @@ func (e *Enumerator) queryWithRetry(
 
 // ResolveMembers batch-resolves a list of DNs to full AD objects.
 // Uses domain root DN (not scoped -b) and minimal attrs + memberLookupAttrs.
-// Single ADWS query with OR filter for stealth.
+// Always requests sdFlags=7 (OWNER|GROUP|DACL) — never drops ACLs.
+// Uses progressive batch reduction on ADWS "too large" errors, then
+// falls back to per-member resolution to guarantee SD data.
 func (e *Enumerator) ResolveMembers(dns []string) []adws.ADObject {
 	if len(dns) == 0 {
 		return nil
 	}
 
-	// Build OR filter for all DNs. Process in chunks of 50 to avoid
-	// oversized SOAP requests.
 	var all []adws.ADObject
-	chunkSize := 50
+	resolved := make(map[string]bool) // track resolved DNs (uppercase)
+
+	// Phase 1: chunk resolution with progressive batch reduction.
+	// Start with chunks of 20 (not 50) to reduce ADWS payload size with SD data.
+	chunkSize := 20
 	for i := 0; i < len(dns); i += chunkSize {
 		end := i + chunkSize
 		if end > len(dns) {
@@ -146,33 +150,40 @@ func (e *Enumerator) ResolveMembers(dns []string) []adws.ADObject {
 		}
 		filter := fmt.Sprintf("(|%s)", strings.Join(parts, ""))
 
-		err := e.client.QueryBatchedWithSDFlags(
-			e.domainDN, filter, memberLookupAttrs, adws.ScopeSubtree,
-			10, 7, // small batch + OWNER|GROUP|DACL
-			func(batch []adws.ADObject) error {
-				all = append(all, batch...)
-				return nil
-			},
-		)
-		if err != nil {
-			// Retry one-by-one with SD flags — never drop ACLs
-			if e.verbose {
-				log.Printf("%s [*] Member resolve batch failed, retrying individually: %v", ts(), err)
+		objs, err := e.queryWithRetry(e.domainDN, filter, memberLookupAttrs, 7, nil)
+		if err == nil {
+			for _, obj := range objs {
+				all = append(all, obj)
+				dn := strings.ToUpper(AttrStr(obj, "distinguishedName"))
+				if dn != "" {
+					resolved[dn] = true
+				}
 			}
-			for _, dn := range chunk {
-				singleFilter := fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn))
-				_ = e.client.QueryBatchedWithSDFlags(
-					e.domainDN, singleFilter, memberLookupAttrs, adws.ScopeSubtree,
-					1, 7,
-					func(batch []adws.ADObject) error {
-						all = append(all, batch...)
-						return nil
-					},
-				)
-			}
+		} else if e.verbose {
+			log.Printf("%s [*] Member resolve chunk failed (size=%d): %v", ts(), len(chunk), err)
 		}
 		e.pace.BetweenRequests()
 	}
+
+	// Phase 2: per-member retry for any DNs not resolved in phase 1.
+	// This catches members whose SD data was too large even at batch=1
+	// in a multi-member filter — a single-DN filter is the smallest possible query.
+	for _, dn := range dns {
+		if resolved[strings.ToUpper(dn)] {
+			continue
+		}
+		singleFilter := fmt.Sprintf("(distinguishedName=%s)", escapeLDAP(dn))
+		objs, err := e.queryWithRetry(e.domainDN, singleFilter, memberLookupAttrs, 7, nil)
+		if err != nil {
+			if e.verbose {
+				log.Printf("%s [!] Member resolve failed even individually: %s: %v", ts(), dn, err)
+			}
+			continue
+		}
+		all = append(all, objs...)
+		e.pace.BetweenRequests()
+	}
+
 	return all
 }
 
