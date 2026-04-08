@@ -484,14 +484,10 @@ func (c *BHConverter) ConvertGroups(objects []adws.ADObject) []bhGroup {
 					ObjectIdentifier: fspSID,
 					ObjectType:       "Group",
 				})
-			} else {
-				// Unresolved DN — emit as User placeholder (not "Base" which
-				// crashes BH CE v8.9.1's IngestibleEndpoint resolver).
-				members = append(members, bhTypedID{
-					ObjectIdentifier: "DN=" + strings.ToUpper(dn),
-					ObjectType:       "User",
-				})
 			}
+			// Unresolved DNs are dropped — DN= stubs crash BH CE v8.9.1
+			// regardless of ObjectType. resolveGroupMembers() should
+			// resolve these to SIDs before we get here.
 		}
 
 		g := bhGroup{
