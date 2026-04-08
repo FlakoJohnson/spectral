@@ -53,13 +53,16 @@ func (e *Enumerator) LookupUsers(sam string) ([]*SingleResult, error) {
 	filter := fmt.Sprintf("(&(objectCategory=person)(objectClass=user)(sAMAccountName=%s))",
 		escapeLDAPKeepWild(sam))
 
-	objs, err := e.queryWithRetry(e.baseDN, filter, singleUserAttrs, 7, nil)
+	objs, err := e.queryWithRetry(e.baseDN, filter, singleUserAttrs, 0, nil)
 	if err != nil {
 		return nil, err
 	}
 	if len(objs) == 0 {
 		return nil, fmt.Errorf("user not found: %s", sam)
 	}
+
+	// Re-fetch each result by DN with SDs for ACL data.
+	objs = e.refetchWithSD(objs, singleUserAttrs)
 
 	var results []*SingleResult
 	for _, obj := range objs {
@@ -93,13 +96,16 @@ func (e *Enumerator) LookupComputers(name string) ([]*SingleResult, error) {
 	}
 	filter := fmt.Sprintf("(&(objectClass=computer)(sAMAccountName=%s))", escapeLDAPKeepWild(sam))
 
-	objs, err := e.queryWithRetry(e.baseDN, filter, singleComputerAttrs, 7, nil)
+	objs, err := e.queryWithRetry(e.baseDN, filter, singleComputerAttrs, 0, nil)
 	if err != nil {
 		return nil, err
 	}
 	if len(objs) == 0 {
 		return nil, fmt.Errorf("computer not found: %s", name)
 	}
+
+	// Re-fetch each result by DN with SDs for ACL data.
+	objs = e.refetchWithSD(objs, singleComputerAttrs)
 
 	var results []*SingleResult
 	for _, obj := range objs {
@@ -127,13 +133,16 @@ func (e *Enumerator) LookupGroups(name string) ([]*SingleResult, error) {
 
 	filter := fmt.Sprintf("(&(objectCategory=group)(sAMAccountName=%s))", escapeLDAPKeepWild(name))
 
-	objs, err := e.queryWithRetry(e.baseDN, filter, groupAttrs, 7, nil)
+	objs, err := e.queryWithRetry(e.baseDN, filter, groupAttrs, 0, nil)
 	if err != nil {
 		return nil, err
 	}
 	if len(objs) == 0 {
 		return nil, fmt.Errorf("group not found: %s", name)
 	}
+
+	// Re-fetch each result by DN with SDs for ACL data.
+	objs = e.refetchWithSD(objs, groupAttrs)
 
 	var results []*SingleResult
 	for _, obj := range objs {
@@ -171,6 +180,31 @@ func (e *Enumerator) LookupOU(ouDN string) ([]adws.ADObject, error) {
 	}
 
 	return e.client.Query(ouDN, e.prepFilter(filter), e.prepAttrs(attrs), adws.ScopeOneLevel)
+}
+
+// refetchWithSD re-fetches each object individually by DN with sdFlags=7
+// to get nTSecurityDescriptor. This avoids the "response too large" issue
+// on wildcard searches across large domains.
+func (e *Enumerator) refetchWithSD(objs []adws.ADObject, attrs []string) []adws.ADObject {
+	out := make([]adws.ADObject, 0, len(objs))
+	for _, obj := range objs {
+		dn := AttrStr(obj, "distinguishedName")
+		if dn == "" {
+			out = append(out, obj)
+			continue
+		}
+		sdObjs, err := e.queryWithRetry(dn, "(objectClass=*)", attrs, 7, nil)
+		if err != nil || len(sdObjs) == 0 {
+			// SD fetch failed — use the original object without ACLs.
+			if e.verbose {
+				log.Printf("%s [*] SD fetch failed for %s, using without ACLs", ts(), dn)
+			}
+			out = append(out, obj)
+			continue
+		}
+		out = append(out, sdObjs[0])
+	}
+	return out
 }
 
 // -------------------------------------------------------------------------
