@@ -155,9 +155,17 @@ func (e *Enumerator) ResolveMembers(dns []string) []adws.ADObject {
 			},
 		)
 		if err != nil {
+			// Retry without SD flags — at least get the SIDs
 			if e.verbose {
-				log.Printf("%s [*] Member resolve chunk failed: %v", ts(), err)
+				log.Printf("%s [*] Member resolve chunk failed, retrying without SD: %v", ts(), err)
 			}
+			_ = e.client.QueryBatched(
+				e.domainDN, filter, memberLookupAttrs, adws.ScopeSubtree, 10,
+				func(batch []adws.ADObject) error {
+					all = append(all, batch...)
+					return nil
+				},
+			)
 		}
 		e.pace.BetweenRequests()
 	}
