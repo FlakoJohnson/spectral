@@ -59,6 +59,7 @@ type bhUser struct {
 	HasSIDHistory     []bhTypedID   `json:"HasSIDHistory"`
 	SPNTargets        []bhSPNTarget `json:"SPNTargets"`
 	Aces              []bhAce       `json:"Aces"`
+	ContainedBy       bhTypedID     `json:"ContainedBy"`
 	IsDeleted         bool          `json:"IsDeleted"`
 	IsACLProtected    bool          `json:"IsACLProtected"`
 	DomainSID         string        `json:"DomainSID"`
@@ -106,6 +107,7 @@ type bhComputer struct {
 	DCRegistryData    bhDCRegistryData   `json:"DCRegistryData"`
 	Status            bhConnStatus       `json:"Status"`
 	Aces              []bhAce            `json:"Aces"`
+	ContainedBy       bhTypedID          `json:"ContainedBy"`
 	IsDeleted         bool               `json:"IsDeleted"`
 	IsACLProtected    bool               `json:"IsACLProtected"`
 	IsDC              bool               `json:"IsDC"`
@@ -137,6 +139,7 @@ type bhGroup struct {
 	Properties       bhGroupProps `json:"Properties"`
 	Members          []bhTypedID  `json:"Members"`
 	Aces             []bhAce      `json:"Aces"`
+	ContainedBy      bhTypedID    `json:"ContainedBy"`
 	IsDeleted        bool         `json:"IsDeleted"`
 	IsACLProtected   bool         `json:"IsACLProtected"`
 }
@@ -308,9 +311,9 @@ func NewBHConverter(domain, domainSID string) *BHConverter {
 	}
 }
 
-// IndexObjects builds the DN→SID/type lookup from users, computers, and groups.
-// Call this before ConvertGroups so member SIDs can be resolved.
-func (c *BHConverter) IndexObjects(users, computers, groups []adws.ADObject) {
+// IndexObjects builds the DN→SID/type lookup from users, computers, groups, and OUs.
+// Call this before Convert* methods so member SIDs and containment can be resolved.
+func (c *BHConverter) IndexObjects(users, computers, groups []adws.ADObject, ous ...[]adws.ADObject) {
 	for _, u := range users {
 		dn := enum.AttrStr(u, "distinguishedName")
 		sid := enum.SIDStr(u, "objectSid")
@@ -333,6 +336,17 @@ func (c *BHConverter) IndexObjects(users, computers, groups []adws.ADObject) {
 		if dn != "" && sid != "" {
 			c.dnToSID[strings.ToUpper(dn)] = sid
 			c.dnToType[strings.ToUpper(dn)] = "Group"
+		}
+	}
+	// Index OUs by DN → GUID (OUs use objectGUID, not objectSid).
+	if len(ous) > 0 {
+		for _, o := range ous[0] {
+			dn := enum.AttrStr(o, "distinguishedName")
+			guid := convertGUID(enum.AttrStr(o, "objectGUID"))
+			if dn != "" && guid != "" {
+				c.dnToSID[strings.ToUpper(dn)] = guid
+				c.dnToType[strings.ToUpper(dn)] = "OU"
+			}
 		}
 	}
 }
@@ -363,6 +377,7 @@ func (c *BHConverter) ConvertUsers(objects []adws.ADObject) []bhUser {
 			HasSIDHistory:          []bhTypedID{},
 			SPNTargets:             []bhSPNTarget{},
 			Aces:                   sdToBHAces(obj, c.dnToSID, c.dnToType),
+			ContainedBy:            c.resolveContainedBy(enum.AttrStr(obj, "distinguishedName")),
 			DomainSID:              c.domainSID,
 			UnconstrainedDelegation: uac&0x80000 != 0,
 			Properties: bhUserProps{
@@ -433,6 +448,7 @@ func (c *BHConverter) ConvertComputers(objects []adws.ADObject) []bhComputer {
 			DCRegistryData:         bhDCRegistryData{},
 			Status:                 bhConnStatus{Connectable: false, Error: ""},
 			Aces:                   sdToBHAces(obj, c.dnToSID, c.dnToType),
+			ContainedBy:            c.resolveContainedBy(enum.AttrStr(obj, "distinguishedName")),
 			IsDC:                   isDC,
 			DomainSID:              c.domainSID,
 			UnconstrainedDelegation: uac&0x80000 != 0,
@@ -494,6 +510,7 @@ func (c *BHConverter) ConvertGroups(objects []adws.ADObject) []bhGroup {
 			ObjectIdentifier: sid,
 			Members:          members,
 			Aces:             sdToBHAces(obj, c.dnToSID, c.dnToType),
+			ContainedBy:      c.resolveContainedBy(enum.AttrStr(obj, "distinguishedName")),
 			Properties: bhGroupProps{
 				Name:              fmt.Sprintf("%s@%s", strings.ToUpper(sam), c.domain),
 				Domain:            c.domain,
@@ -553,27 +570,12 @@ func (c *BHConverter) ConvertOUs(objects []adws.ADObject) []bhOU {
 		name := enum.AttrStr(obj, "name")
 		dn := enum.AttrStr(obj, "distinguishedName")
 
-		// Determine parent container from DN.
-		containedBy := bhTypedID{}
-		if parentDN := parentFromDN(dn); parentDN != "" {
-			upperParent := strings.ToUpper(parentDN)
-			if psid, ok := c.dnToSID[upperParent]; ok {
-				containedBy = bhTypedID{ObjectIdentifier: psid, ObjectType: c.dnToType[upperParent]}
-			} else {
-				// Parent is domain root or unknown OU — use domain SID if it matches
-				domainDN := dnFromDomain(c.domain)
-				if strings.EqualFold(parentDN, domainDN) && c.domainSID != "" {
-					containedBy = bhTypedID{ObjectIdentifier: c.domainSID, ObjectType: "Domain"}
-				}
-			}
-		}
-
 		ou := bhOU{
 			ObjectIdentifier: guid,
 			ChildObjects:     []bhTypedID{},
 			Links:            parseGPLinks(enum.AttrStr(obj, "gPLink")),
 			Aces:             sdToBHAces(obj, c.dnToSID, c.dnToType),
-			ContainedBy:      containedBy,
+			ContainedBy:      c.resolveContainedBy(dn),
 			Properties: bhOUProps{
 				Name:              fmt.Sprintf("%s@%s", strings.ToUpper(name), c.domain),
 				Domain:            c.domain,
@@ -621,7 +623,7 @@ func WriteBHZip(
 	domainInfo *enum.DomainResult,
 ) error {
 	c := NewBHConverter(domain, domainSID)
-	c.IndexObjects(users, computers, groups)
+	c.IndexObjects(users, computers, groups, ous)
 
 	zipPath := filepath.Join(outDir, fmt.Sprintf("%s_bloodhound.zip", filePrefix))
 	f, err := os.Create(zipPath)
@@ -1058,6 +1060,22 @@ func parseGPLinks(gpLink string) []bhGPOLink {
 		links = append(links, bhGPOLink{GUID: guid, IsEnforced: enforced})
 	}
 	return links
+}
+
+// resolveContainedBy determines the parent container (OU or Domain) from a DN.
+func (c *BHConverter) resolveContainedBy(dn string) bhTypedID {
+	if parentDN := parentFromDN(dn); parentDN != "" {
+		upperParent := strings.ToUpper(parentDN)
+		if psid, ok := c.dnToSID[upperParent]; ok {
+			return bhTypedID{ObjectIdentifier: psid, ObjectType: c.dnToType[upperParent]}
+		}
+		// Parent is domain root
+		domainDN := dnFromDomain(c.domain)
+		if strings.EqualFold(parentDN, domainDN) && c.domainSID != "" {
+			return bhTypedID{ObjectIdentifier: c.domainSID, ObjectType: "Domain"}
+		}
+	}
+	return bhTypedID{}
 }
 
 // parentFromDN extracts the parent DN from a distinguished name.
