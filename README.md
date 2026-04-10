@@ -59,12 +59,13 @@ Connection:
 Enumeration:
   -m  string   Modes, comma-separated
                Unauthenticated: rootdse
-               Sweep:    users, computers, groups, gpos, trusts, domain
+               Sweep:    users, computers, groups, gpos, trusts, ous, domain
                Targeted: kerberoastable, asreproast, unconstrained,
                          constrained, rbcd, admincount, shadowcreds,
                          laps, pwdnoexpire, stale, fgpp, adcs
+               Misc:     machinequota
                Shorthand:
-                 sweep    — all sweep modes (users, computers, groups, gpos, trusts, domain)
+                 sweep    — all sweep modes (users, computers, groups, gpos, trusts, ous, domain)
                  targeted — all attack-path modes (kerberoastable, asreproast, delegation, etc.)
                  full     — sweep + targeted combined
 
@@ -78,6 +79,8 @@ Enumeration:
 
   -A  int      Stale threshold in days for -m stale (default: 90)
   -b  string   Base DN (auto-derived from -d if omitted)
+               Can be specified multiple times for chunked enumeration:
+                 -b "OU=Sales,DC=corp,DC=local" -b "OU=IT,DC=corp,DC=local"
 
 Output & pacing:
   -o  string   Output directory (default: ./<IP>_<YYYYMMDD>/)
@@ -140,6 +143,12 @@ export ALL_PROXY=socks5://127.0.0.1:1080
 ./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -m sweep -bh -o ./out
 ```
 
+## Sweep modes
+
+The `sweep` shorthand runs: `users`, `computers`, `groups`, `gpos`, `trusts`, `ous`, `domain`.
+
+The `ous` mode enumerates all organizational units with their linked GPOs and GPO link counts. OU data feeds into the BloodHound zip for containment hierarchy.
+
 ## Targeted modes
 
 | Mode | What it finds | Wire filter (ADWS log) |
@@ -156,6 +165,30 @@ export ALL_PROXY=socks5://127.0.0.1:1080
 | `stale` | Enabled users inactive for N days | `(lastLogonTimestamp<=<filetime>)` |
 | `fgpp` | Fine-grained password policies (PSOs) | `(objectClass=msDS-PasswordSettings)` |
 | `adcs` | AD CS — enterprise CAs, templates, ESC1/2/3/4/6/7/9/15 findings | `(objectClass=pKIcertificateTemplate)` + `(objectClass=pKIEnrollmentService)` |
+| `machinequota` | ms-DS-MachineAccountQuota value from domain root | Domain root ADCAP query |
+
+## BloodHound CE output
+
+The `-bh` flag generates a BH CE v6 zip with full containment hierarchy:
+
+- **ContainedBy edges** — Users, computers, groups, GPOs, and OUs include `ContainedBy` edges linking each object to its parent OU or domain. This enables GPO->OU->object traversal in BloodHound for attack path analysis.
+- **OUs and Containers** — OU nodes are included with GPO links and ACLs. Container objects (e.g. `CN=Users`, `CN=Computers`) are auto-collected for accurate placement.
+- **Member resolution** — Group member DNs are resolved to SIDs via ADWS before zip generation to avoid orphan DN-stub nodes.
+- **ACE principal resolution** — Unknown SIDs in ACEs are resolved to named nodes for inbound object control visibility.
+
+## Large domain support
+
+For domains with large ADWS responses (e.g. 9600+ computers), two features help avoid "response too large" errors:
+
+**Multiple `-b` flags** — Chunk enumeration by OU scope. Results are merged across all scopes:
+```bash
+./spectral -t 10.210.96.61 -d amer.corp.local -u svc -p pass \
+  -b "OU=East,DC=amer,DC=corp,DC=local" \
+  -b "OU=West,DC=amer,DC=corp,DC=local" \
+  -m sweep -bh
+```
+
+**Split SD fetch for lookups** — `-T` wildcard lookups (e.g. `-T user:*admin*`) first query with `sdFlags=0` (no security descriptors), then re-fetch each matched object individually by DN with `sdFlags=7` for ACL data. This avoids oversized responses on broad searches.
 
 ## OPSEC notes
 
@@ -164,7 +197,7 @@ export ALL_PROXY=socks5://127.0.0.1:1080
 - `kerberoastable` and `asreproast` issue a plain user sweep on the wire and filter client-side — the ADWS log shows `(&(objectCategory=person)(objectClass=user))`, not an SPN/UAC bitmask query. MDI fingerprints `(servicePrincipalName=*)` in the filter as "Possible SPN enumeration via ADWS".
 - Configurable jitter and batch size to control query volume
 - Binary is built with `-s -w -trimpath` to strip symbols and build paths
-- No SDFlags:0x7 pattern (SOAPHound signature)
+- SDFlags:0x7 is used selectively (per-object re-fetch and member resolution), not as a bulk sweep pattern like SOAPHound
 - **Use Kerberos (`-k`) when possible.** NTLMv2 from a non-domain-joined IP triggers "Suspicious NTLM authentication" in MDI regardless of query content — MDI flags any ADWS NTLMv2 auth where the source resolves to an unknown machine. Running from a domain-joined foothold with a Kerberos ccache avoids this entirely.
 
 ## Detection
