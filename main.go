@@ -14,6 +14,7 @@ import (
 
 	"spectral/internal/adws"
 	"spectral/internal/enum"
+	"spectral/internal/gopacket"
 	"spectral/internal/opsec"
 	"spectral/internal/output"
 	"spectral/internal/recon"
@@ -67,6 +68,7 @@ Output & pacing:
   -q           Quiet
   -x           Debug SOAP XML
   -bh          Also write BloodHound CE zip (users/computers/groups/gpos/trusts)
+  -gp          Enable gopacket (impacket-style) enumeration via LDAP/SMB
 
 Stealth (enabled by default):
   --no-stealth Disable stealth features (faster but noisier — may trigger MDI)
@@ -110,6 +112,7 @@ func main() {
 		quiet     = flag.Bool("q", false, "")
 		debugXML  = flag.Bool("x", false, "")
 		bhOut     = flag.Bool("bh", false, "")
+		gpEnable  = flag.Bool("gp", false, "")
 		proxyURL  = flag.String("proxy", "", "")
 		noStealth = flag.Bool("no-stealth", false, "")
 		batchMin  = flag.Int("Bmin", 75, "")
@@ -275,6 +278,11 @@ func main() {
 	// ── Single object lookup ────────────────────────────────────────────
 	if *targetObj != "" {
 		runLookup(e, w, *targetObj, coll)
+	}
+
+	// ── GoPacket enumeration ────────────────────────────────────────────
+	if *gpEnable {
+		runGoPacket(*target, *domain, *username, *password, *useKerb, !*quiet)
 	}
 
 	// ── Mode-based enumeration ──────────────────────────────────────────
@@ -814,6 +822,73 @@ func sanitise(s string) string {
 
 func ts() string {
 	return time.Now().UTC().Format("2006-01-02 15:04:05 UTC --")
+}
+
+// runGoPacket performs gopacket-based enumeration via LDAP/SMB
+func runGoPacket(target, domain, username, password string, useKerberos, verbose bool) {
+	if verbose {
+		log.Printf("%s [*] Starting gopacket enumeration", ts())
+	}
+
+	// Create gopacket client configuration
+	cfg := gopacket.Config{
+		Host:        target,
+		Port:        389, // LDAP port
+		Domain:      domain,
+		Username:    username,
+		Password:    password,
+		UseKerberos: useKerberos,
+		Verbose:     verbose,
+	}
+
+	// Create and connect gopacket client
+	client := gopacket.NewClient(cfg)
+	if err := client.Connect(); err != nil {
+		log.Printf("%s [-] Gopacket connection failed: %v", ts(), err)
+		return
+	}
+	defer client.Close()
+
+	if verbose {
+		log.Printf("%s [+] Gopacket connected via LDAP", ts())
+	}
+
+	// Enumerate users
+	if verbose {
+		log.Printf("%s [*] Enumerating users via gopacket", ts())
+	}
+	users, err := client.EnumerateUsers()
+	if err != nil {
+		log.Printf("%s [-] Gopacket user enumeration failed: %v", ts(), err)
+	} else {
+		log.Printf("%s [+] Gopacket found %d users", ts(), len(users))
+	}
+
+	// Enumerate computers
+	if verbose {
+		log.Printf("%s [*] Enumerating computers via gopacket", ts())
+	}
+	computers, err := client.EnumerateComputers()
+	if err != nil {
+		log.Printf("%s [-] Gopacket computer enumeration failed: %v", ts(), err)
+	} else {
+		log.Printf("%s [+] Gopacket found %d computers", ts(), len(computers))
+	}
+
+	// Enumerate groups
+	if verbose {
+		log.Printf("%s [*] Enumerating groups via gopacket", ts())
+	}
+	groups, err := client.EnumerateGroups()
+	if err != nil {
+		log.Printf("%s [-] Gopacket group enumeration failed: %v", ts(), err)
+	} else {
+		log.Printf("%s [+] Gopacket found %d groups", ts(), len(groups))
+	}
+
+	if verbose {
+		log.Printf("%s [+] Gopacket enumeration complete", ts())
+	}
 }
 
 func contains(ss []string, s string) bool {
