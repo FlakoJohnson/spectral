@@ -69,6 +69,7 @@ Output & pacing:
   -x           Debug SOAP XML
   -bh          Also write BloodHound CE zip (users/computers/groups/gpos/trusts)
   -gp          Enable gopacket (impacket-style) enumeration via LDAP/SMB
+  --gp-stealth Use stealth techniques for gopacket SPN enumeration (avoids MDI detection)
 
 Stealth (enabled by default):
   --no-stealth Disable stealth features (faster but noisier — may trigger MDI)
@@ -113,6 +114,7 @@ func main() {
 		debugXML  = flag.Bool("x", false, "")
 		bhOut     = flag.Bool("bh", false, "")
 		gpEnable  = flag.Bool("gp", false, "")
+		gpStealth = flag.Bool("gp-stealth", false, "")
 		proxyURL  = flag.String("proxy", "", "")
 		noStealth = flag.Bool("no-stealth", false, "")
 		batchMin  = flag.Int("Bmin", 75, "")
@@ -207,7 +209,7 @@ func main() {
 		if *domain == "" {
 			log.Fatalf("%s [-] -d (domain) is required for gopacket enumeration", ts())
 		}
-		runGoPacket(*target, *domain, *username, *password, *useKerb, !*quiet)
+		runGoPacket(*target, *domain, *username, *password, *useKerb, !*quiet, *gpStealth)
 	}
 
 	// If nothing left to do, exit.
@@ -829,7 +831,7 @@ func ts() string {
 }
 
 // runGoPacket performs gopacket-based enumeration via LDAP/SMB
-func runGoPacket(target, domain, username, password string, useKerberos, verbose bool) {
+func runGoPacket(target, domain, username, password string, useKerberos, verbose, stealth bool) {
 	if verbose {
 		log.Printf("%s [*] Starting gopacket enumeration", ts())
 	}
@@ -892,13 +894,26 @@ func runGoPacket(target, domain, username, password string, useKerberos, verbose
 
 	// Enumerate Kerberoastable users
 	if verbose {
-		log.Printf("%s [*] Enumerating Kerberoastable users via gopacket", ts())
+		if stealth {
+			log.Printf("%s [*] Enumerating Kerberoastable users via gopacket (stealth mode)", ts())
+		} else {
+			log.Printf("%s [*] Enumerating Kerberoastable users via gopacket", ts())
+		}
 	}
-	kerbUsers, err := client.EnumerateKerberoastable()
+	var kerbUsers []map[string]interface{}
+	if stealth {
+		kerbUsers, err = client.EnumerateKerberoastableStealthy()
+	} else {
+		kerbUsers, err = client.EnumerateKerberoastableDirect()
+	}
 	if err != nil {
 		log.Printf("%s [-] Gopacket Kerberoastable enumeration failed: %v", ts(), err)
 	} else {
-		log.Printf("%s [+] Gopacket found %d Kerberoastable users", ts(), len(kerbUsers))
+		modeStr := ""
+		if stealth {
+			modeStr = " (stealth)"
+		}
+		log.Printf("%s [+] Gopacket found %d Kerberoastable users%s", ts(), len(kerbUsers), modeStr)
 	}
 
 	// Enumerate AS-REP Roastable users

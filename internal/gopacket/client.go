@@ -3,6 +3,7 @@ package gopacket
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/go-ldap/ldap/v3"
 )
@@ -291,8 +292,102 @@ func (c *Client) EnumerateGroups() ([]map[string]interface{}, error) {
 	return groups, nil
 }
 
-// EnumerateKerberoastable finds users with SPNs (Kerberoastable accounts)
+// EnumerateKerberoastable finds users with SPNs using stealth techniques
 func (c *Client) EnumerateKerberoastable() ([]map[string]interface{}, error) {
+	return c.EnumerateKerberoastableStealthy()
+}
+
+// EnumerateKerberoastableStealthy uses service-specific queries to avoid detection
+func (c *Client) EnumerateKerberoastableStealthy() ([]map[string]interface{}, error) {
+	if c.ldapConn == nil {
+		return nil, fmt.Errorf("LDAP connection not established")
+	}
+
+	baseDN, err := c.getBaseDN()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get domain naming context: %v", err)
+	}
+
+	// Service-specific SPN queries to avoid bulk enumeration detection
+	serviceFilters := []string{
+		"(&(objectClass=user)(servicePrincipalName=HTTP/*))",
+		"(&(objectClass=user)(servicePrincipalName=MSSQLSvc/*))",
+		"(&(objectClass=user)(servicePrincipalName=CIFS/*))",
+		"(&(objectClass=user)(servicePrincipalName=TERMSRV/*))",
+		"(&(objectClass=user)(servicePrincipalName=WSMAN/*))",
+		"(&(objectClass=user)(servicePrincipalName=ldap/*))",
+		"(&(objectClass=user)(servicePrincipalName=HOST/*))",
+		"(&(objectClass=user)(servicePrincipalName=RestrictedKrbHost/*))",
+	}
+
+	attributes := []string{
+		"distinguishedName", "sAMAccountName", "servicePrincipalName",
+		"userPrincipalName", "displayName", "lastLogon", "pwdLastSet",
+	}
+
+	if c.verbose {
+		log.Printf("[*] Searching for Kerberoastable users using stealth techniques")
+	}
+
+	allUsers := make(map[string]map[string]interface{})
+
+	// Query each service type separately with delays
+	for i, filter := range serviceFilters {
+		if i > 0 && c.verbose {
+			// Small delay between queries to avoid bulk pattern detection
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		searchRequest := ldap.NewSearchRequest(
+			baseDN,
+			ldap.ScopeWholeSubtree,
+			ldap.NeverDerefAliases,
+			0, 0, false,
+			filter,
+			attributes,
+			nil,
+		)
+
+		result, err := c.ldapConn.Search(searchRequest)
+		if err != nil {
+			if c.verbose {
+				log.Printf("[-] Service query failed for filter %s: %v", filter, err)
+			}
+			continue
+		}
+
+		// Merge results (avoid duplicates)
+		for _, entry := range result.Entries {
+			dn := entry.DN
+			if _, exists := allUsers[dn]; !exists {
+				user := make(map[string]interface{})
+				for _, attr := range entry.Attributes {
+					if len(attr.Values) == 1 {
+						user[attr.Name] = attr.Values[0]
+					} else {
+						user[attr.Name] = attr.Values
+					}
+				}
+				allUsers[dn] = user
+			}
+		}
+	}
+
+	// Convert map to slice
+	users := make([]map[string]interface{}, 0, len(allUsers))
+	for _, user := range allUsers {
+		users = append(users, user)
+	}
+
+	if c.verbose {
+		log.Printf("[+] Found %d Kerberoastable users via stealth enumeration", len(users))
+	}
+
+	return users, nil
+}
+
+// EnumerateKerberoastableDirect uses the original direct query (may trigger detection)
+func (c *Client) EnumerateKerberoastableDirect() ([]map[string]interface{}, error) {
 	if c.ldapConn == nil {
 		return nil, fmt.Errorf("LDAP connection not established")
 	}
@@ -309,7 +404,7 @@ func (c *Client) EnumerateKerberoastable() ([]map[string]interface{}, error) {
 	}
 
 	if c.verbose {
-		log.Printf("[*] Searching for Kerberoastable users in %s", baseDN)
+		log.Printf("[*] Searching for Kerberoastable users (direct query - may trigger detection)")
 	}
 
 	searchRequest := ldap.NewSearchRequest(
@@ -341,7 +436,7 @@ func (c *Client) EnumerateKerberoastable() ([]map[string]interface{}, error) {
 	}
 
 	if c.verbose {
-		log.Printf("[+] Found %d Kerberoastable users via impacket-style LDAP", len(users))
+		log.Printf("[+] Found %d Kerberoastable users via direct query", len(users))
 	}
 
 	return users, nil
