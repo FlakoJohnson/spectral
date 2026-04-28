@@ -886,6 +886,28 @@ func runGoPacket(target, domain, username, password string, useKerberos, verbose
 		log.Printf("%s [+] Gopacket found %d groups", ts(), len(groups))
 	}
 
+	// Enumerate Kerberoastable users
+	if verbose {
+		log.Printf("%s [*] Enumerating Kerberoastable users via gopacket", ts())
+	}
+	kerbUsers, err := client.EnumerateKerberoastable()
+	if err != nil {
+		log.Printf("%s [-] Gopacket Kerberoastable enumeration failed: %v", ts(), err)
+	} else {
+		log.Printf("%s [+] Gopacket found %d Kerberoastable users", ts(), len(kerbUsers))
+	}
+
+	// Enumerate AS-REP Roastable users
+	if verbose {
+		log.Printf("%s [*] Enumerating AS-REP Roastable users via gopacket", ts())
+	}
+	asrepUsers, err := client.EnumerateASREPRoastable()
+	if err != nil {
+		log.Printf("%s [-] Gopacket AS-REP Roastable enumeration failed: %v", ts(), err)
+	} else {
+		log.Printf("%s [+] Gopacket found %d AS-REP Roastable users", ts(), len(asrepUsers))
+	}
+
 	if verbose {
 		log.Printf("%s [+] Gopacket enumeration complete", ts())
 	}

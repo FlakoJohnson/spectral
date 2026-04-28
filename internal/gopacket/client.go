@@ -279,6 +279,119 @@ func (c *Client) EnumerateGroups() ([]map[string]interface{}, error) {
 	return groups, nil
 }
 
+// EnumerateKerberoastable finds users with SPNs (Kerberoastable accounts)
+func (c *Client) EnumerateKerberoastable() ([]map[string]interface{}, error) {
+	if c.ldapConn == nil {
+		return nil, fmt.Errorf("LDAP connection not established")
+	}
+
+	baseDN, err := c.getBaseDN()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get domain naming context: %v", err)
+	}
+
+	filter := "(&(objectClass=user)(objectCategory=person)(servicePrincipalName=*))"
+	attributes := []string{
+		"distinguishedName", "sAMAccountName", "servicePrincipalName",
+		"userPrincipalName", "displayName", "lastLogon", "pwdLastSet",
+	}
+
+	if c.verbose {
+		log.Printf("[*] Searching for Kerberoastable users in %s", baseDN)
+	}
+
+	searchRequest := ldap.NewSearchRequest(
+		baseDN,
+		ldap.ScopeWholeSubtree,
+		ldap.NeverDerefAliases,
+		0, 0, false,
+		filter,
+		attributes,
+		nil,
+	)
+
+	result, err := c.ldapConn.Search(searchRequest)
+	if err != nil {
+		return nil, fmt.Errorf("Kerberoastable enumeration failed: %v", err)
+	}
+
+	users := make([]map[string]interface{}, 0, len(result.Entries))
+	for _, entry := range result.Entries {
+		user := make(map[string]interface{})
+		for _, attr := range entry.Attributes {
+			if len(attr.Values) == 1 {
+				user[attr.Name] = attr.Values[0]
+			} else {
+				user[attr.Name] = attr.Values
+			}
+		}
+		users = append(users, user)
+	}
+
+	if c.verbose {
+		log.Printf("[+] Found %d Kerberoastable users via impacket-style LDAP", len(users))
+	}
+
+	return users, nil
+}
+
+// EnumerateASREPRoastable finds users with DONT_REQUIRE_PREAUTH set
+func (c *Client) EnumerateASREPRoastable() ([]map[string]interface{}, error) {
+	if c.ldapConn == nil {
+		return nil, fmt.Errorf("LDAP connection not established")
+	}
+
+	baseDN, err := c.getBaseDN()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get domain naming context: %v", err)
+	}
+
+	// DONT_REQUIRE_PREAUTH = 0x400000 (4194304)
+	filter := "(&(objectClass=user)(objectCategory=person)(userAccountControl:1.2.840.113556.1.4.803:=4194304))"
+	attributes := []string{
+		"distinguishedName", "sAMAccountName", "userPrincipalName",
+		"displayName", "userAccountControl", "lastLogon", "pwdLastSet",
+	}
+
+	if c.verbose {
+		log.Printf("[*] Searching for AS-REP Roastable users in %s", baseDN)
+	}
+
+	searchRequest := ldap.NewSearchRequest(
+		baseDN,
+		ldap.ScopeWholeSubtree,
+		ldap.NeverDerefAliases,
+		0, 0, false,
+		filter,
+		attributes,
+		nil,
+	)
+
+	result, err := c.ldapConn.Search(searchRequest)
+	if err != nil {
+		return nil, fmt.Errorf("AS-REP Roastable enumeration failed: %v", err)
+	}
+
+	users := make([]map[string]interface{}, 0, len(result.Entries))
+	for _, entry := range result.Entries {
+		user := make(map[string]interface{})
+		for _, attr := range entry.Attributes {
+			if len(attr.Values) == 1 {
+				user[attr.Name] = attr.Values[0]
+			} else {
+				user[attr.Name] = attr.Values
+			}
+		}
+		users = append(users, user)
+	}
+
+	if c.verbose {
+		log.Printf("[+] Found %d AS-REP Roastable users via impacket-style LDAP", len(users))
+	}
+
+	return users, nil
+}
+
 // EnumerateShares placeholder for SMB share enumeration
 func (c *Client) EnumerateShares() ([]string, error) {
 	// TODO: Implement SMB share enumeration
