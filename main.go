@@ -149,7 +149,7 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	if *mode == "" && *targetObj == "" {
+	if *mode == "" && *targetObj == "" && !*gpEnable {
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -199,6 +199,15 @@ func main() {
 			w.Write("rootdse.json", dse)
 		}
 		modes = filterOut(modes, "rootdse")
+	}
+
+	// ── GoPacket enumeration (before ADWS setup) ──────────────────────────
+	if *gpEnable {
+		// GoPacket requires credentials but not ADWS setup
+		if *domain == "" {
+			log.Fatalf("%s [-] -d (domain) is required for gopacket enumeration", ts())
+		}
+		runGoPacket(*target, *domain, *username, *password, *useKerb, !*quiet)
 	}
 
 	// If nothing left to do, exit.
@@ -278,11 +287,6 @@ func main() {
 	// ── Single object lookup ────────────────────────────────────────────
 	if *targetObj != "" {
 		runLookup(e, w, *targetObj, coll)
-	}
-
-	// ── GoPacket enumeration ────────────────────────────────────────────
-	if *gpEnable {
-		runGoPacket(*target, *domain, *username, *password, *useKerb, !*quiet)
 	}
 
 	// ── Mode-based enumeration ──────────────────────────────────────────

@@ -65,13 +65,25 @@ func (c *Client) Connect() error {
 	}
 	c.ldapConn = conn
 
-	// Authenticate
-	bindUser := c.username
-	if c.domain != "" {
-		bindUser = fmt.Sprintf("%s\\%s", c.domain, c.username)
+	// Try different authentication formats
+	authFormats := []string{
+		c.username,                                              // plain username
+		fmt.Sprintf("%s@%s", c.username, c.domain),             // UPN format
+		fmt.Sprintf("%s\\%s", c.domain, c.username),            // domain\user format
 	}
 
-	err = c.ldapConn.Bind(bindUser, c.password)
+	for i, bindUser := range authFormats {
+		err = c.ldapConn.Bind(bindUser, c.password)
+		if err == nil {
+			if c.verbose {
+				log.Printf("[+] Authenticated with format: %s", bindUser)
+			}
+			break
+		}
+		if c.verbose && i < len(authFormats)-1 {
+			log.Printf("[-] Auth format %s failed, trying next", bindUser)
+		}
+	}
 	if err != nil {
 		c.ldapConn.Close()
 		return fmt.Errorf("LDAP authentication failed: %v", err)
