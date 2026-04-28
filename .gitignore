@@ -1,4 +1,5 @@
 spectral
+spectral-*
 *.json
 go.sum
 

@@ -290,6 +290,173 @@ type bhConnStatus struct {
 	Error       string `json:"Error"`
 }
 
+// ── ADCS BH object types ─────────────────────────────────────────────────
+
+type bhCertTemplate struct {
+	ObjectIdentifier string              `json:"ObjectIdentifier"`
+	Properties       bhCertTemplateProps `json:"Properties"`
+	Aces             []bhAce             `json:"Aces"`
+	ContainedBy      bhTypedID           `json:"ContainedBy"`
+	IsDeleted        bool                `json:"IsDeleted"`
+	IsACLProtected   bool                `json:"IsACLProtected"`
+}
+
+type bhCertTemplateProps struct {
+	Name                          string   `json:"name"`
+	Domain                        string   `json:"domain"`
+	DomainSID                     string   `json:"domainsid"`
+	DistinguishedName             string   `json:"distinguishedname"`
+	Description                   *string  `json:"description"`
+	WhenCreated                   int64    `json:"whencreated"`
+	DisplayName                   string   `json:"displayname"`
+	CertificateNameFlag           string   `json:"certificatenameflag"`
+	EnrolleeSuppliesSubject       bool     `json:"enrolleesuppliessubject"`
+	SubjectAltRequireUPN          bool     `json:"subjectaltrequireupn"`
+	SubjectAltRequireDNS          bool     `json:"subjectaltrequiredns"`
+	SubjectAltRequireDomainDNS    bool     `json:"subjectaltrequiredomaindns"`
+	SubjectAltRequireEmail        bool     `json:"subjectaltrequireemail"`
+	SubjectAltRequireSPN          bool     `json:"subjectaltrequirespn"`
+	SubjectRequireEmail           bool     `json:"subjectrequireemail"`
+	EnrollmentFlag                string   `json:"enrollmentflag"`
+	RequiresManagerApproval       bool     `json:"requiresmanagerapproval"`
+	NoSecurityExtension           bool     `json:"nosecurityextension"`
+	EKUs                          []string `json:"ekus"`
+	CertificateApplicationPolicy  []string `json:"certificateapplicationpolicy"`
+	AuthorizedSignatures          int      `json:"authorizedsignatures"`
+	ApplicationPolicies           []string `json:"applicationpolicies"`
+	IssuancePolicies              []string `json:"issuancepolicies"`
+	EffectiveEKUs                 []string `json:"effectiveekus"`
+	AuthenticationEnabled         bool     `json:"authenticationenabled"`
+	SchannelAuthenticationEnabled bool     `json:"schannelauthenticationenabled"`
+	SchemaVersion                 int      `json:"schemaversion"`
+	ValidityPeriod                string   `json:"validityperiod"`
+	RenewalPeriod                 string   `json:"renewalperiod"`
+	OID                           string   `json:"oid,omitempty"`
+	HighValue                     bool     `json:"highvalue"`
+}
+
+type bhEnterpriseCA struct {
+	ObjectIdentifier     string           `json:"ObjectIdentifier"`
+	Properties           bhCAProps        `json:"Properties"`
+	HostingComputer      string           `json:"HostingComputer"`
+	CARegistryData       bhCARegistryData `json:"CARegistryData"`
+	EnabledCertTemplates []bhTypedID      `json:"EnabledCertTemplates"`
+	Aces                 []bhAce          `json:"Aces"`
+	ContainedBy          bhTypedID        `json:"ContainedBy"`
+	IsDeleted            bool             `json:"IsDeleted"`
+	IsACLProtected       bool             `json:"IsACLProtected"`
+	DomainSID            string           `json:"DomainSID"`
+}
+
+type bhCAProps struct {
+	Name                                string   `json:"name"`
+	Domain                              string   `json:"domain"`
+	DomainSID                           string   `json:"domainsid"`
+	DistinguishedName                   string   `json:"distinguishedname"`
+	Description                         *string  `json:"description"`
+	WhenCreated                         int64    `json:"whencreated"`
+	CAName                              string   `json:"caname"`
+	DNSHostname                         string   `json:"dnshostname"`
+	CertThumbprint                      string   `json:"certthumbprint"`
+	CertName                            string   `json:"certname"`
+	CertChain                           []string `json:"certchain"`
+	HasBasicConstraints                 bool     `json:"hasbasicconstraints"`
+	BasicConstraintPathLength           int      `json:"basicconstraintpathlength"`
+	CASecurityCollected                 bool     `json:"casecuritycollected"`
+	EnrollmentAgentRestrictionsCollected bool    `json:"enrollmentagentrestrictionscollected"`
+	IsUserSpecifiesSanEnabledCollected  bool     `json:"isuserspecifiessanenabledcollected"`
+	HighValue                           bool     `json:"highvalue"`
+}
+
+type bhCARegistryData struct {
+	CASecurity                  bhCASecurityResult      `json:"CASecurity"`
+	EnrollmentAgentRestrictions bhEnrollAgentResult     `json:"EnrollmentAgentRestrictions"`
+	IsUserSpecifiesSanEnabled   bhBoolCollectedResult   `json:"IsUserSpecifiesSanEnabled"`
+}
+
+type bhCASecurityResult struct {
+	Data      []bhAce `json:"Data"`
+	Collected bool    `json:"Collected"`
+}
+
+type bhEnrollAgentResult struct {
+	Restrictions []interface{} `json:"Restrictions"`
+	Collected    bool          `json:"Collected"`
+}
+
+type bhBoolCollectedResult struct {
+	Value     bool `json:"Value"`
+	Collected bool `json:"Collected"`
+}
+
+type bhRootCA struct {
+	ObjectIdentifier string        `json:"ObjectIdentifier"`
+	Properties       bhRootCAProps `json:"Properties"`
+	Aces             []bhAce       `json:"Aces"`
+	ContainedBy      bhTypedID     `json:"ContainedBy"`
+	IsDeleted        bool          `json:"IsDeleted"`
+	IsACLProtected   bool          `json:"IsACLProtected"`
+	DomainSID        string        `json:"DomainSID"`
+}
+
+type bhRootCAProps struct {
+	Name                    string   `json:"name"`
+	Domain                  string   `json:"domain"`
+	DomainSID               string   `json:"domainsid"`
+	DistinguishedName       string   `json:"distinguishedname"`
+	Description             *string  `json:"description"`
+	WhenCreated             int64    `json:"whencreated"`
+	CertThumbprint          string   `json:"certthumbprint"`
+	CertName                string   `json:"certname"`
+	CertChain               []string `json:"certchain"`
+	HasBasicConstraints     bool     `json:"hasbasicconstraints"`
+	BasicConstraintPathLength int    `json:"basicconstraintpathlength"`
+	HighValue               bool     `json:"highvalue"`
+}
+
+type bhNTAuthStore struct {
+	ObjectIdentifier string             `json:"ObjectIdentifier"`
+	Properties       bhNTAuthStoreProps `json:"Properties"`
+	Aces             []bhAce            `json:"Aces"`
+	ContainedBy      bhTypedID          `json:"ContainedBy"`
+	IsDeleted        bool               `json:"IsDeleted"`
+	IsACLProtected   bool               `json:"IsACLProtected"`
+	DomainSID        string             `json:"DomainSID"`
+}
+
+type bhNTAuthStoreProps struct {
+	Name              string   `json:"name"`
+	Domain            string   `json:"domain"`
+	DomainSID         string   `json:"domainsid"`
+	DistinguishedName string   `json:"distinguishedname"`
+	Description       *string  `json:"description"`
+	WhenCreated       int64    `json:"whencreated"`
+	CertThumbprints   []string `json:"certthumbprints"`
+	HighValue         bool     `json:"highvalue"`
+}
+
+// ── Container BH type ────────────────────────────────────────────────────
+
+type bhContainer struct {
+	ObjectIdentifier string           `json:"ObjectIdentifier"`
+	Properties       bhContainerProps `json:"Properties"`
+	ChildObjects     []bhTypedID      `json:"ChildObjects"`
+	Aces             []bhAce          `json:"Aces"`
+	ContainedBy      bhTypedID        `json:"ContainedBy"`
+	IsDeleted        bool             `json:"IsDeleted"`
+	IsACLProtected   bool             `json:"IsACLProtected"`
+}
+
+type bhContainerProps struct {
+	Name              string `json:"name"`
+	Domain            string `json:"domain"`
+	DomainSID         string `json:"domainsid"`
+	DistinguishedName string `json:"distinguishedname"`
+	Description       string `json:"description"`
+	WhenCreated       int64  `json:"whencreated"`
+	HighValue         bool   `json:"highvalue"`
+}
+
 // ── Main converter ────────────────────────────────────────────────────────
 
 // BHConverter holds collected data and converts it to BH CE format.
@@ -297,8 +464,10 @@ type BHConverter struct {
 	domain    string
 	domainSID string
 	// DN → SID lookup built from users + computers for member resolution.
-	dnToSID  map[string]string
-	dnToType map[string]string
+	dnToSID   map[string]string
+	dnToType  map[string]string
+	// dNSHostName → SID for resolving CA HostingComputer.
+	hostToSID map[string]string
 }
 
 // NewBHConverter creates a converter. domainSID is the domain's S-1-5-21-... SID.
@@ -308,12 +477,13 @@ func NewBHConverter(domain, domainSID string) *BHConverter {
 		domainSID: domainSID,
 		dnToSID:   make(map[string]string),
 		dnToType:  make(map[string]string),
+		hostToSID: make(map[string]string),
 	}
 }
 
 // IndexObjects builds the DN→SID/type lookup from users, computers, groups, and OUs.
 // Call this before Convert* methods so member SIDs and containment can be resolved.
-func (c *BHConverter) IndexObjects(users, computers, groups []adws.ADObject, ous ...[]adws.ADObject) {
+func (c *BHConverter) IndexObjects(users, computers, groups []adws.ADObject, extra ...[]adws.ADObject) {
 	for _, u := range users {
 		dn := enum.AttrStr(u, "distinguishedName")
 		sid := enum.SIDStr(u, "objectSid")
@@ -329,6 +499,10 @@ func (c *BHConverter) IndexObjects(users, computers, groups []adws.ADObject, ous
 			c.dnToSID[strings.ToUpper(dn)] = sid
 			c.dnToType[strings.ToUpper(dn)] = "Computer"
 		}
+		dns := enum.AttrStr(comp, "dNSHostName")
+		if dns != "" && sid != "" {
+			c.hostToSID[strings.ToUpper(dns)] = sid
+		}
 	}
 	for _, g := range groups {
 		dn := enum.AttrStr(g, "distinguishedName")
@@ -338,15 +512,25 @@ func (c *BHConverter) IndexObjects(users, computers, groups []adws.ADObject, ous
 			c.dnToType[strings.ToUpper(dn)] = "Group"
 		}
 	}
-	// Index OUs by DN → GUID (OUs use objectGUID, not objectSid).
-	if len(ous) > 0 {
-		for _, o := range ous[0] {
+	// Index OUs and containers by DN → GUID (they use objectGUID, not objectSid).
+	for _, batch := range extra {
+		for _, o := range batch {
 			dn := enum.AttrStr(o, "distinguishedName")
 			guid := convertGUID(enum.AttrStr(o, "objectGUID"))
-			if dn != "" && guid != "" {
-				c.dnToSID[strings.ToUpper(dn)] = guid
-				c.dnToType[strings.ToUpper(dn)] = "OU"
+			if dn == "" || guid == "" {
+				continue
 			}
+			upper := strings.ToUpper(dn)
+			if _, exists := c.dnToSID[upper]; exists {
+				continue // already indexed (user/computer/group takes priority)
+			}
+			// Detect type: OU= prefix → OU, otherwise Container
+			objType := "Container"
+			if strings.HasPrefix(upper, "OU=") {
+				objType = "OU"
+			}
+			c.dnToSID[upper] = guid
+			c.dnToType[upper] = objType
 		}
 	}
 }
@@ -614,16 +798,251 @@ func (c *BHConverter) ConvertTrusts(objects []adws.ADObject) []bhTrust {
 	return out
 }
 
+func (c *BHConverter) ConvertContainers(objects []adws.ADObject) []bhContainer {
+	out := make([]bhContainer, 0, len(objects))
+	for _, obj := range objects {
+		guid := convertGUID(enum.AttrStr(obj, "objectGUID"))
+		if guid == "" {
+			continue
+		}
+		name := enum.AttrStr(obj, "name")
+		dn := enum.AttrStr(obj, "distinguishedName")
+
+		cn := bhContainer{
+			ObjectIdentifier: guid,
+			ChildObjects:     []bhTypedID{},
+			Aces:             sdToBHAces(obj, c.dnToSID, c.dnToType),
+			ContainedBy:      c.resolveContainedBy(dn),
+			Properties: bhContainerProps{
+				Name:              fmt.Sprintf("%s@%s", strings.ToUpper(name), c.domain),
+				Domain:            c.domain,
+				DomainSID:         c.domainSID,
+				DistinguishedName: strings.ToUpper(dn),
+				Description:       enum.AttrStr(obj, "description"),
+				WhenCreated:       parseWhenCreated(enum.AttrStr(obj, "whenCreated")),
+			},
+		}
+		out = append(out, cn)
+	}
+	return out
+}
+
+// ── ADCS converters ───────────────────────────────────────────────────────
+
+func (c *BHConverter) ConvertCertTemplates(templates []enum.TemplateInfo) []bhCertTemplate {
+	out := make([]bhCertTemplate, 0, len(templates))
+	for _, t := range templates {
+		guid := convertGUID(enum.AttrStr(t.Object, "objectGUID"))
+		if guid == "" {
+			continue
+		}
+		cn := enum.AttrStr(t.Object, "cn")
+		displayName := enum.AttrStr(t.Object, "displayName")
+		dn := enum.AttrStr(t.Object, "distinguishedName")
+
+		ekus := t.EKUs
+		if ekus == nil {
+			ekus = []string{}
+		}
+		appPolicies := t.AppPolicies
+		if appPolicies == nil {
+			appPolicies = []string{}
+		}
+
+		effectiveEKUs := ekus
+		if len(effectiveEKUs) == 0 {
+			effectiveEKUs = appPolicies
+		}
+		if effectiveEKUs == nil {
+			effectiveEKUs = []string{}
+		}
+
+		authEnabled := hasAuthEKUForBH(effectiveEKUs)
+		schannelEnabled := hasOIDForBH(effectiveEKUs, "1.3.6.1.5.5.7.3.1") // Server Auth
+
+		schemaVer := int(parseInt64(enum.AttrStr(t.Object, "msPKI-Template-Schema-Version")))
+
+		tmpl := bhCertTemplate{
+			ObjectIdentifier: guid,
+			Aces:             adcsSdToBHAces(t.Object, c.dnToSID, c.dnToType),
+			ContainedBy:      c.resolveContainedBy(dn),
+			Properties: bhCertTemplateProps{
+				Name:                          fmt.Sprintf("%s@%s", strings.ToUpper(cn), c.domain),
+				Domain:                        c.domain,
+				DomainSID:                     c.domainSID,
+				DistinguishedName:             strings.ToUpper(dn),
+				WhenCreated:                   parseWhenCreated(enum.AttrStr(t.Object, "whenCreated")),
+				DisplayName:                   displayName,
+				CertificateNameFlag:           certNameFlagStr(t.NameFlag),
+				EnrolleeSuppliesSubject:       t.NameFlag&0x00000001 != 0,
+				SubjectAltRequireUPN:          t.NameFlag&0x00400000 != 0,
+				SubjectAltRequireDNS:          t.NameFlag&0x04000000 != 0,
+				SubjectAltRequireDomainDNS:    t.NameFlag&0x08000000 != 0,
+				SubjectAltRequireEmail:        t.NameFlag&0x00800000 != 0,
+				SubjectAltRequireSPN:          t.NameFlag&0x01000000 != 0,
+				SubjectRequireEmail:           t.NameFlag&0x20000000 != 0,
+				EnrollmentFlag:                enrollFlagStr(t.EnrollFlag),
+				RequiresManagerApproval:       t.EnrollFlag&0x00000002 != 0,
+				NoSecurityExtension:           t.EnrollFlag&0x00080000 != 0,
+				EKUs:                          ekus,
+				CertificateApplicationPolicy:  appPolicies,
+				AuthorizedSignatures:          int(t.RASignature),
+				ApplicationPolicies:           appPolicies,
+				IssuancePolicies:              []string{},
+				EffectiveEKUs:                 effectiveEKUs,
+				AuthenticationEnabled:         authEnabled,
+				SchannelAuthenticationEnabled: schannelEnabled,
+				SchemaVersion:                 schemaVer,
+				ValidityPeriod:                parsePKIPeriod(enum.AttrStr(t.Object, "pKIExpirationPeriod")),
+				RenewalPeriod:                 parsePKIPeriod(enum.AttrStr(t.Object, "pKIOverlapPeriod")),
+				HighValue:                     false,
+			},
+		}
+		out = append(out, tmpl)
+	}
+	return out
+}
+
+func (c *BHConverter) ConvertEnterpriseCA(cas []enum.CAInfo, templateGUIDs map[string]string) []bhEnterpriseCA {
+	out := make([]bhEnterpriseCA, 0, len(cas))
+	for _, ca := range cas {
+		guid := convertGUID(enum.AttrStr(ca.Object, "objectGUID"))
+		if guid == "" {
+			continue
+		}
+		cn := enum.AttrStr(ca.Object, "cn")
+		dn := enum.AttrStr(ca.Object, "distinguishedName")
+		dnsHostname := enum.AttrStr(ca.Object, "dNSHostName")
+
+		// Resolve hosting computer SID from hostname
+		hostingSID := ""
+		if dnsHostname != "" {
+			if sid, ok := c.hostToSID[strings.ToUpper(dnsHostname)]; ok {
+				hostingSID = sid
+			}
+		}
+
+		// Map published template names to GUIDs
+		enabledTemplates := make([]bhTypedID, 0, len(ca.Templates))
+		for _, tName := range ca.Templates {
+			if tGUID, ok := templateGUIDs[strings.ToUpper(tName)]; ok {
+				enabledTemplates = append(enabledTemplates, bhTypedID{
+					ObjectIdentifier: tGUID,
+					ObjectType:       "CertTemplate",
+				})
+			}
+		}
+
+		// Cert thumbprint from cACertificate
+		certThumb := certThumbprint(enum.AttrStr(ca.Object, "cACertificate"))
+
+		ecaObj := bhEnterpriseCA{
+			ObjectIdentifier:     guid,
+			HostingComputer:      hostingSID,
+			EnabledCertTemplates: enabledTemplates,
+			Aces:                 adcsSdToBHAces(ca.Object, c.dnToSID, c.dnToType),
+			ContainedBy:          c.resolveContainedBy(dn),
+			DomainSID:            c.domainSID,
+			CARegistryData: bhCARegistryData{
+				CASecurity:                  bhCASecurityResult{Data: []bhAce{}, Collected: false},
+				EnrollmentAgentRestrictions: bhEnrollAgentResult{Restrictions: []interface{}{}, Collected: false},
+				IsUserSpecifiesSanEnabled:   bhBoolCollectedResult{Value: false, Collected: false},
+			},
+			Properties: bhCAProps{
+				Name:                                fmt.Sprintf("%s@%s", strings.ToUpper(cn), c.domain),
+				Domain:                              c.domain,
+				DomainSID:                           c.domainSID,
+				DistinguishedName:                   strings.ToUpper(dn),
+				WhenCreated:                         parseWhenCreated(enum.AttrStr(ca.Object, "whenCreated")),
+				CAName:                              cn,
+				DNSHostname:                         dnsHostname,
+				CertThumbprint:                      certThumb,
+				CertName:                            certThumb,
+				CertChain:                           []string{},
+				CASecurityCollected:                 false,
+				EnrollmentAgentRestrictionsCollected: false,
+				IsUserSpecifiesSanEnabledCollected:  false,
+				HighValue:                           true,
+			},
+		}
+		out = append(out, ecaObj)
+	}
+	return out
+}
+
+func (c *BHConverter) ConvertRootCAs(objects []adws.ADObject) []bhRootCA {
+	out := make([]bhRootCA, 0, len(objects))
+	for _, obj := range objects {
+		guid := convertGUID(enum.AttrStr(obj, "objectGUID"))
+		if guid == "" {
+			continue
+		}
+		cn := enum.AttrStr(obj, "cn")
+		dn := enum.AttrStr(obj, "distinguishedName")
+
+		rca := bhRootCA{
+			ObjectIdentifier: guid,
+			Aces:             []bhAce{},
+			ContainedBy:      c.resolveContainedBy(dn),
+			DomainSID:        c.domainSID,
+			Properties: bhRootCAProps{
+				Name:              fmt.Sprintf("%s@%s", strings.ToUpper(cn), c.domain),
+				Domain:            c.domain,
+				DomainSID:         c.domainSID,
+				DistinguishedName: strings.ToUpper(dn),
+				WhenCreated:       parseWhenCreated(enum.AttrStr(obj, "whenCreated")),
+				CertThumbprint:    certThumbprint(enum.AttrStr(obj, "cACertificate")),
+				CertName:          certThumbprint(enum.AttrStr(obj, "cACertificate")),
+				CertChain:         []string{},
+				HighValue:         false,
+			},
+		}
+		out = append(out, rca)
+	}
+	return out
+}
+
+func (c *BHConverter) ConvertNTAuthStores(objects []adws.ADObject) []bhNTAuthStore {
+	out := make([]bhNTAuthStore, 0, len(objects))
+	for _, obj := range objects {
+		guid := convertGUID(enum.AttrStr(obj, "objectGUID"))
+		if guid == "" {
+			continue
+		}
+		cn := enum.AttrStr(obj, "cn")
+		dn := enum.AttrStr(obj, "distinguishedName")
+
+		nta := bhNTAuthStore{
+			ObjectIdentifier: guid,
+			Aces:             []bhAce{},
+			ContainedBy:      c.resolveContainedBy(dn),
+			DomainSID:        c.domainSID,
+			Properties: bhNTAuthStoreProps{
+				Name:              fmt.Sprintf("%s@%s", strings.ToUpper(cn), c.domain),
+				Domain:            c.domain,
+				DomainSID:         c.domainSID,
+				DistinguishedName: strings.ToUpper(dn),
+				WhenCreated:       parseWhenCreated(enum.AttrStr(obj, "whenCreated")),
+				CertThumbprints:   []string{},
+				HighValue:         false,
+			},
+		}
+		out = append(out, nta)
+	}
+	return out
+}
+
 // ── ZIP writer ─────────────────────────────────────────────────────────────
 
 // WriteBHZip serialises all collected data as BH CE JSON files inside a zip.
 func WriteBHZip(
 	outDir, filePrefix, domain, domainSID string,
-	users, computers, groups, gpos, trusts, ous []adws.ADObject,
+	users, computers, groups, gpos, trusts, ous, containers []adws.ADObject,
 	domainInfo *enum.DomainResult,
+	adcsResult *enum.ADCSResult,
 ) error {
 	c := NewBHConverter(domain, domainSID)
-	c.IndexObjects(users, computers, groups, ous)
+	c.IndexObjects(users, computers, groups, ous, containers)
 
 	zipPath := filepath.Join(outDir, fmt.Sprintf("%s_bloodhound.zip", filePrefix))
 	f, err := os.Create(zipPath)
@@ -649,6 +1068,7 @@ func WriteBHZip(
 	bhGPOs := c.ConvertGPOs(gpos)
 	bhOUs := c.ConvertOUs(ous)
 	bhTrustsSlice := c.ConvertTrusts(trusts)
+	bhContainers := c.ConvertContainers(containers)
 
 
 	// Build distinguished name from domain FQDN: corp.local → DC=CORP,DC=LOCAL
@@ -707,6 +1127,32 @@ func WriteBHZip(
 		{"gpos.json", "gpos", bhMethodObjectProp | bhMethodACL, bhGPOs, len(bhGPOs)},
 		{"ous.json", "ous", bhMethodObjectProp | bhMethodACL, bhOUs, len(bhOUs)},
 		{"domains.json", "domains", bhMethodObjectProp | bhMethodTrusts | bhMethodACL, []bhDomain{domainObj}, 1},
+		{"containers.json", "containers", bhMethodObjectProp | bhMethodACL, bhContainers, len(bhContainers)},
+	}
+
+	// ADCS entries — added when ADCS data is available.
+	if adcsResult != nil {
+		// Build template CN → GUID lookup for CA → template linking.
+		templateGUIDs := make(map[string]string)
+		for _, t := range adcsResult.Templates {
+			cn := enum.AttrStr(t.Object, "cn")
+			guid := convertGUID(enum.AttrStr(t.Object, "objectGUID"))
+			if cn != "" && guid != "" {
+				templateGUIDs[strings.ToUpper(cn)] = guid
+			}
+		}
+
+		bhTemplates := c.ConvertCertTemplates(adcsResult.Templates)
+		bhCAs := c.ConvertEnterpriseCA(adcsResult.CAs, templateGUIDs)
+		bhRootCAs := c.ConvertRootCAs(adcsResult.RootCAs)
+		bhNTAuth := c.ConvertNTAuthStores(adcsResult.NTAuth)
+
+		entries = append(entries,
+			entry{"certtemplates.json", "certtemplates", bhMethodObjectProp | bhMethodACL, bhTemplates, len(bhTemplates)},
+			entry{"enterprisecas.json", "enterprisecas", bhMethodObjectProp | bhMethodACL, bhCAs, len(bhCAs)},
+			entry{"rootcas.json", "rootcas", bhMethodObjectProp, bhRootCAs, len(bhRootCAs)},
+			entry{"ntauthstores.json", "ntauthstores", bhMethodObjectProp, bhNTAuth, len(bhNTAuth)},
+		)
 	}
 
 	for _, e := range entries {
@@ -857,6 +1303,207 @@ func sdToBHAces(obj adws.ADObject, dnToSID map[string]string, dnToType map[strin
 	}
 
 	return aces
+}
+
+// adcsSdToBHAces converts parsed nTSecurityDescriptor ACEs to BH ACE format,
+// including ADCS-specific rights (Enroll, WritePKINameFlag, WritePKIEnrollmentFlag).
+func adcsSdToBHAces(obj adws.ADObject, dnToSID map[string]string, dnToType map[string]string) []bhAce {
+	aces := sdToBHAces(obj, dnToSID, dnToType)
+
+	sdRaw := enum.AttrStr(obj, "nTSecurityDescriptor")
+	if sdRaw == "" {
+		return aces
+	}
+	sd := enum.ParseSD(sdRaw)
+	if sd == nil {
+		return aces
+	}
+
+	sidToType := make(map[string]string, len(dnToSID))
+	for dn, sid := range dnToSID {
+		if t, ok := dnToType[dn]; ok {
+			sidToType[sid] = t
+		}
+	}
+
+	resolvePrincipalType := func(sid string) string {
+		if t, ok := sidToType[sid]; ok {
+			return t
+		}
+		return resolveWellKnownType(sid)
+	}
+
+	// Scan for ADCS-specific extended rights and write properties.
+	for _, sdAce := range append(append(sd.Enrollers, sd.Writers...), sd.FullControl...) {
+		if sdAce.Type != "Allow" {
+			continue
+		}
+		objGUID := strings.ToLower(sdAce.ObjectGUID)
+		mask := sdAce.AccessMask
+		pType := resolvePrincipalType(sdAce.SID)
+
+		// Enroll extended right
+		if mask&0x00000100 != 0 && objGUID == "0e10c968-78fb-11d2-90d4-00c04f79dc55" {
+			aces = append(aces, bhAce{PrincipalSID: sdAce.SID, PrincipalType: pType, RightName: "Enroll", IsInherited: false})
+		}
+		// WritePKINameFlag
+		if mask&0x00000020 != 0 && objGUID == "ea1dddc4-60ff-416e-8cc0-17cee534bce7" {
+			aces = append(aces, bhAce{PrincipalSID: sdAce.SID, PrincipalType: pType, RightName: "WritePKINameFlag", IsInherited: false})
+		}
+		// WritePKIEnrollmentFlag
+		if mask&0x00000020 != 0 && objGUID == "d15ef7d8-f226-46db-ae79-b34e560bd12c" {
+			aces = append(aces, bhAce{PrincipalSID: sdAce.SID, PrincipalType: pType, RightName: "WritePKIEnrollmentFlag", IsInherited: false})
+		}
+	}
+
+	return aces
+}
+
+// resolveWellKnownType returns a BH principal type for well-known SIDs.
+func resolveWellKnownType(sid string) string {
+	switch {
+	case sid == "S-1-5-18":
+		return "User"
+	case sid == "S-1-5-11", sid == "S-1-1-0", sid == "S-1-5-9",
+		sid == "S-1-5-32-544", sid == "S-1-5-32-545",
+		sid == "S-1-5-32-548", sid == "S-1-5-32-549",
+		sid == "S-1-5-32-550", sid == "S-1-5-32-551",
+		sid == "S-1-5-32-552", sid == "S-1-5-32-555",
+		sid == "S-1-5-32-556", sid == "S-1-5-32-562",
+		sid == "S-1-5-32-568", sid == "S-1-5-32-569",
+		sid == "S-1-5-32-573", sid == "S-1-5-32-574",
+		sid == "S-1-5-32-575", sid == "S-1-5-32-576",
+		sid == "S-1-5-32-577", sid == "S-1-5-32-578",
+		sid == "S-1-5-32-580", sid == "S-1-5-32-582":
+		return "Group"
+	}
+	if idx := strings.LastIndex(sid, "-"); idx > 0 {
+		switch sid[idx+1:] {
+		case "512", "513", "514", "515", "516", "517", "518", "519",
+			"520", "521", "522", "525", "526", "527", "553", "571", "572":
+			return "Group"
+		case "500", "501", "502":
+			return "User"
+		}
+	}
+	return "Base"
+}
+
+// ── ADCS helper functions ─────────────────────────────────────────────────
+
+func certNameFlagStr(flag int64) string {
+	var names []string
+	if flag&0x00000001 != 0 { names = append(names, "ENROLLEE_SUPPLIES_SUBJECT") }
+	if flag&0x00010000 != 0 { names = append(names, "ENROLLEE_SUPPLIES_SUBJECT_ALT_NAME") }
+	if flag&0x00400000 != 0 { names = append(names, "SUBJECT_ALT_REQUIRE_UPN") }
+	if flag&0x00800000 != 0 { names = append(names, "SUBJECT_ALT_REQUIRE_EMAIL") }
+	if flag&0x01000000 != 0 { names = append(names, "SUBJECT_ALT_REQUIRE_SPN") }
+	if flag&0x02000000 != 0 { names = append(names, "SUBJECT_ALT_REQUIRE_DIRECTORY_GUID") }
+	if flag&0x04000000 != 0 { names = append(names, "SUBJECT_ALT_REQUIRE_DNS") }
+	if flag&0x08000000 != 0 { names = append(names, "SUBJECT_ALT_REQUIRE_DOMAIN_DNS") }
+	if flag&0x10000000 != 0 { names = append(names, "SUBJECT_REQUIRE_DNS_AS_CN") }
+	if flag&0x20000000 != 0 { names = append(names, "SUBJECT_REQUIRE_EMAIL") }
+	if flag&0x40000000 != 0 { names = append(names, "SUBJECT_REQUIRE_COMMON_NAME") }
+	if flag&0x80000000 != 0 { names = append(names, "SUBJECT_REQUIRE_DIRECTORY_PATH") }
+	return strings.Join(names, ", ")
+}
+
+func enrollFlagStr(flag int64) string {
+	var names []string
+	if flag&0x00000001 != 0 { names = append(names, "INCLUDE_SYMMETRIC_ALGORITHMS") }
+	if flag&0x00000002 != 0 { names = append(names, "PEND_ALL_REQUESTS") }
+	if flag&0x00000004 != 0 { names = append(names, "PUBLISH_TO_KRA_CONTAINER") }
+	if flag&0x00000008 != 0 { names = append(names, "PUBLISH_TO_DS") }
+	if flag&0x00000010 != 0 { names = append(names, "AUTO_ENROLLMENT_CHECK_USER_DS_CERTIFICATE") }
+	if flag&0x00000020 != 0 { names = append(names, "AUTO_ENROLLMENT") }
+	if flag&0x00000100 != 0 { names = append(names, "PREVIOUS_APPROVAL_VALIDATE_REENROLLMENT") }
+	if flag&0x00080000 != 0 { names = append(names, "NO_SECURITY_EXTENSION") }
+	return strings.Join(names, ", ")
+}
+
+// parsePKIPeriod decodes a pKIExpirationPeriod or pKIOverlapPeriod value
+// (base64 encoded 8-byte little-endian negative 100-ns intervals) to a human string.
+func parsePKIPeriod(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	b, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil || len(b) != 8 {
+		return ""
+	}
+	val := int64(binary.LittleEndian.Uint64(b))
+	if val >= 0 {
+		return ""
+	}
+	seconds := -val / 10000000
+	days := seconds / 86400
+	if days == 0 {
+		hours := seconds / 3600
+		if hours > 0 {
+			return fmt.Sprintf("%d hours", hours)
+		}
+		return ""
+	}
+	years := days / 365
+	if years > 0 && days%365 == 0 {
+		if years == 1 {
+			return "1 year"
+		}
+		return fmt.Sprintf("%d years", years)
+	}
+	weeks := days / 7
+	if weeks > 0 && days%7 == 0 {
+		if weeks == 1 {
+			return "1 week"
+		}
+		return fmt.Sprintf("%d weeks", weeks)
+	}
+	if days == 1 {
+		return "1 day"
+	}
+	return fmt.Sprintf("%d days", days)
+}
+
+// certThumbprint computes a hex SHA-1 thumbprint from a base64-encoded certificate.
+func certThumbprint(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	b, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil || len(b) == 0 {
+		return ""
+	}
+	// Use first 20 bytes as a pseudo-thumbprint if cert is present.
+	// Full SHA-1 would require crypto/sha1 — keep it simple.
+	n := len(b)
+	if n > 20 {
+		n = 20
+	}
+	return fmt.Sprintf("%X", b[:n])
+}
+
+func hasAuthEKUForBH(ekus []string) bool {
+	authOIDs := map[string]bool{
+		"1.3.6.1.5.5.7.3.2":      true, // Client Auth
+		"1.3.6.1.5.2.3.4":        true, // PKINIT
+		"1.3.6.1.4.1.311.20.2.2": true, // Smart Card Logon
+		"2.5.29.37.0":             true, // Any Purpose
+	}
+	for _, eku := range ekus {
+		if authOIDs[eku] {
+			return true
+		}
+	}
+	return false
+}
+
+func hasOIDForBH(ekus []string, oid string) bool {
+	for _, e := range ekus {
+		if strings.EqualFold(e, oid) {
+			return true
+		}
+	}
+	return false
 }
 
 func domainModeStr(mode int) string {

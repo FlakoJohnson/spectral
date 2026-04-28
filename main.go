@@ -297,7 +297,7 @@ func main() {
 	// or when explicitly requested with -bh.
 	hasBHData := len(coll.users) > 0 || len(coll.computers) > 0 ||
 		len(coll.groups) > 0 || len(coll.gpos) > 0 || len(coll.trusts) > 0 ||
-		len(coll.ous) > 0 || coll.domainInfo != nil
+		len(coll.ous) > 0 || coll.domainInfo != nil || coll.adcsResult != nil
 	if *bhOut || hasBHData {
 		domainSID := coll.domainSID
 		// Auto-fetch domain SID via ADCAP if not yet resolved.
@@ -323,10 +323,17 @@ func main() {
 		}
 		// Resolve unknown ACE principal SIDs so inbound object control shows names.
 		coll.resolveACEPrincipals(e)
+		// Auto-collect containers for containment hierarchy if we have sweep data.
+		if len(coll.containers) == 0 && (len(coll.users) > 0 || len(coll.computers) > 0) {
+			if cnts, cerr := e.Containers(); cerr == nil {
+				coll.containers = cnts
+			}
+		}
 		if err := output.WriteBHZip(
 			*outDir, filePrefix, *domain, domainSID,
-			coll.users, coll.computers, coll.groups, coll.gpos, coll.trusts, coll.ous,
+			coll.users, coll.computers, coll.groups, coll.gpos, coll.trusts, coll.ous, coll.containers,
 			coll.domainInfo,
+			coll.adcsResult,
 		); err != nil {
 			log.Printf("%s [-] BloodHound zip: %v", ts(), err)
 		}
@@ -345,8 +352,10 @@ type collector struct {
 	gpos       []adws.ADObject
 	trusts     []adws.ADObject
 	ous        []adws.ADObject
+	containers []adws.ADObject
 	domainSID  string
 	domainInfo *enum.DomainResult
+	adcsResult *enum.ADCSResult
 }
 
 // resolveGroupMembers queries ADWS for any group member DNs that couldn't be
@@ -553,6 +562,17 @@ func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays in
 			coll.ous = append(coll.ous, data...)
 			output.PrintOUs(data)
 		}
+	case "adcs":
+		adcsResult, adcsErr := e.ADCS()
+		res.data, res.err = adcsResult, adcsErr
+		if adcsErr == nil {
+			coll.adcsResult = adcsResult
+			// Use ADCS-derived domain SID if not yet resolved
+			if coll.domainSID == "" && adcsResult.DomainSID != "" {
+				coll.domainSID = adcsResult.DomainSID
+			}
+			output.PrintADCS(adcsResult)
+		}
 	default:
 		runMode(e, w, m, staleDays)
 		return
@@ -621,12 +641,6 @@ func runMode(e *enum.Enumerator, w *output.Writer, m string, staleDays int) {
 		res.data, res.err = e.StaleAccounts(staleDays)
 	case "fgpp":
 		res.data, res.err = e.FineGrainedPasswordPolicies()
-	case "adcs":
-		adcsResult, adcsErr := e.ADCS()
-		res.data, res.err = adcsResult, adcsErr
-		if adcsErr == nil {
-			output.PrintADCS(adcsResult)
-		}
 	default:
 		log.Printf("%s [-] Unknown mode: %s", ts(), m)
 		return

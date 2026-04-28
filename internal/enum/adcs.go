@@ -134,6 +134,7 @@ var templateAttrs = []string{
 	"pKIDefaultCSPs",
 	"nTSecurityDescriptor",
 	"whenCreated",
+	"msPKI-Template-Schema-Version",
 }
 
 var rootCAAttrs = []string{
