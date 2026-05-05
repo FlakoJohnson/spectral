@@ -1105,6 +1105,13 @@ func WriteBHZip(
 		}
 	}
 
+	// Process collected domain objects to extract ACEs for DCSync relationships
+	var domainACEs []bhAce
+	for _, obj := range domainObjects {
+		// Extract ACEs from domain object's nTSecurityDescriptor
+		domainACEs = append(domainACEs, sdToBHAces(obj, c.dnToSID, c.dnToType)...)
+	}
+
 	domainObj := bhDomain{
 		ObjectIdentifier: domainSID,
 		Properties: bhDomainProps{
@@ -1118,7 +1125,7 @@ func WriteBHZip(
 			WhenCreated:       -1,
 		},
 		Trusts:       bhTrustsSlice,
-		Aces:         []bhAce{},
+		Aces:         domainACEs,
 		ChildObjects: []bhTypedID{},
 		Links:        []bhGPOLink{},
 	}
