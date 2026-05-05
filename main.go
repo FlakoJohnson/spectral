@@ -46,6 +46,7 @@ Enumeration:
                Targeted: kerberoastable, asreproast, unconstrained,
                          constrained, rbcd, admincount, shadowcreds,
                          laps, pwdnoexpire, stale, fgpp, adcs
+               GPO Analysis: gpos-enhanced, wmifilters, sitegpos
 
                Shorthand:
                  sweep    — all sweep modes (users, computers, groups, gpos, trusts, domain)
@@ -549,6 +550,25 @@ func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays in
 		if err == nil {
 			coll.gpos = append(coll.gpos, data...)
 		}
+	case "gpos-enhanced":
+		data, err := e.GPOsEnhanced()
+		res.data, res.err = data, err
+		if err == nil {
+			coll.gpos = append(coll.gpos, data...)
+			output.PrintGPOsEnhanced(data)
+		}
+	case "wmifilters":
+		data, err := e.WMIFilters()
+		res.data, res.err = data, err
+		if err == nil {
+			output.PrintWMIFilters(data)
+		}
+	case "sitegpos":
+		data, err := e.SiteGPOLinks()
+		res.data, res.err = data, err
+		if err == nil {
+			output.PrintSiteGPOLinks(data)
+		}
 	case "trusts":
 		data, err := e.Trusts()
 		res.data, res.err = data, err
@@ -605,6 +625,24 @@ func runMode(e *enum.Enumerator, w *output.Writer, m string, staleDays int) {
 		res.data, res.err = e.Groups()
 	case "gpos":
 		res.data, res.err = e.GPOs()
+	case "gpos-enhanced":
+		data, err := e.GPOsEnhanced()
+		res.data, res.err = data, err
+		if err == nil {
+			output.PrintGPOsEnhanced(data)
+		}
+	case "wmifilters":
+		data, err := e.WMIFilters()
+		res.data, res.err = data, err
+		if err == nil {
+			output.PrintWMIFilters(data)
+		}
+	case "sitegpos":
+		data, err := e.SiteGPOLinks()
+		res.data, res.err = data, err
+		if err == nil {
+			output.PrintSiteGPOLinks(data)
+		}
 	case "trusts":
 		res.data, res.err = e.Trusts()
 	case "ous":
@@ -754,6 +792,7 @@ func expandModes(m string) []string {
 	targetedAll := []string{
 		"kerberoastable", "asreproast", "unconstrained", "constrained",
 		"rbcd", "admincount", "shadowcreds", "laps", "pwdnoexpire", "stale", "fgpp", "adcs",
+		"gpos-enhanced", "wmifilters", "sitegpos",
 	}
 	switch m {
 	// Current names

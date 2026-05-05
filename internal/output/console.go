@@ -719,3 +719,171 @@ func wrap(s string, width int) []string {
 	}
 	return lines
 }
+
+// PrintGPOsEnhanced prints enhanced GPO analysis with comprehensive metadata
+func PrintGPOsEnhanced(gpos []adws.ADObject) {
+	fmt.Println()
+	header(fmt.Sprintf("Enhanced GPO Analysis  (%d)", len(gpos)))
+
+	const (
+		wName = 35
+		wPath = 45
+		wVersion = 10
+	)
+
+	fmt.Printf("  %s%-*s  %-*s  %-*s  %s%s\n",
+		bold+white,
+		wName, "Display Name",
+		wPath, "SYSVOL Path",
+		wVersion, "Version",
+		"Extensions", reset)
+
+	fmt.Printf("  %s%s  %s  %s  %s%s\n",
+		strings.Repeat("─", wName),
+		strings.Repeat("─", wPath+2),
+		strings.Repeat("─", wVersion+2),
+		strings.Repeat("─", 15),
+		reset)
+
+	for _, gpo := range gpos {
+		name := enum.AttrStr(gpo, "displayName")
+		path := enum.AttrStr(gpo, "gPCFileSysPath")
+		version := enum.AttrStr(gpo, "versionNumber")
+
+		// Extract and format CSE extensions
+		machineExts := enum.AttrStr(gpo, "gPCMachineExtensionNames")
+		userExts := enum.AttrStr(gpo, "gPCUserExtensionNames")
+		exts := formatGPOExtensions(machineExts, userExts)
+
+		if len(name) > wName-1 {
+			name = name[:wName-4] + "..."
+		}
+		if len(path) > wPath-1 {
+			path = "..." + path[len(path)-(wPath-4):]
+		}
+
+		fmt.Printf("  %-*s  %-*s  %s%-*s%s  %s\n",
+			wName, name,
+			wPath, path,
+			cyan, wVersion, version, reset,
+			exts)
+	}
+	fmt.Println()
+}
+
+// PrintWMIFilters prints WMI filter analysis for GPO targeting
+func PrintWMIFilters(filters []adws.ADObject) {
+	fmt.Println()
+	header(fmt.Sprintf("WMI Filters  (%d)", len(filters)))
+
+	for i, filter := range filters {
+		name := enum.AttrStr(filter, "msWMI-Name")
+		query := enum.AttrStr(filter, "msWMI-Parm1")
+		author := enum.AttrStr(filter, "msWMI-Author")
+
+		fmt.Printf("  %s%d%s\n", bold+white, i, reset)
+		fmt.Printf("    %-20s: %s%s%s\n", "Name", bold+cyan, name, reset)
+		fmt.Printf("    %-20s: %s%s%s\n", "Author", yellow, author, reset)
+		fmt.Printf("    %-20s: %s%s%s\n", "WQL Query", purple, truncateString(query, 80), reset)
+		fmt.Println()
+	}
+}
+
+// PrintSiteGPOLinks prints site-level GPO links often missed by tools
+func PrintSiteGPOLinks(sites []adws.ADObject) {
+	fmt.Println()
+	header(fmt.Sprintf("Site GPO Links  (%d)", len(sites)))
+
+	const (
+		wSite = 25
+		wLinks = 50
+	)
+
+	fmt.Printf("  %s%-*s  %-*s  %s%s\n",
+		bold+white,
+		wSite, "Site Name",
+		wLinks, "Linked GPOs",
+		"Options", reset)
+
+	fmt.Printf("  %s  %s  %s%s\n",
+		strings.Repeat("─", wSite),
+		strings.Repeat("─", wLinks),
+		strings.Repeat("─", 15),
+		reset)
+
+	for _, site := range sites {
+		siteName := enum.AttrStr(site, "name")
+		gPLink := enum.AttrStr(site, "gPLink")
+		gPOptions := enum.AttrStr(site, "gPOptions")
+
+		// Parse and format GPO links
+		links := parseGPOLinks(gPLink)
+		linkStr := formatGPOLinks(links, wLinks-1)
+
+		fmt.Printf("  %-*s  %-*s  %s%s%s\n",
+			wSite, siteName,
+			wLinks, linkStr,
+			cyan, gPOptions, reset)
+	}
+	fmt.Println()
+}
+
+// Helper functions for GPO output formatting
+
+func formatGPOExtensions(machine, user string) string {
+	var parts []string
+	if machine != "" {
+		parts = append(parts, "M")
+	}
+	if user != "" {
+		parts = append(parts, "U")
+	}
+	if len(parts) == 0 {
+		return grey + "None" + reset
+	}
+	return green + strings.Join(parts, "+") + reset
+}
+
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
+}
+
+func parseGPOLinks(gPLink string) []string {
+	if gPLink == "" {
+		return nil
+	}
+	// Parse [LDAP://CN=GUID,...;OPTIONS][LDAP://...;OPTIONS] format
+	var links []string
+	parts := strings.Split(gPLink, "][")
+	for _, part := range parts {
+		part = strings.Trim(part, "[]")
+		if strings.Contains(part, "CN=") {
+			// Extract GUID from LDAP DN
+			if start := strings.Index(part, "CN="); start != -1 {
+				guid := part[start+3:]
+				if end := strings.Index(guid, ","); end != -1 {
+					guid = guid[:end]
+				}
+				// Remove braces if present
+				guid = strings.Trim(guid, "{}")
+				links = append(links, guid[:8]+"...") // Show first 8 chars
+			}
+		}
+	}
+	return links
+}
+
+func formatGPOLinks(links []string, maxWidth int) string {
+	if len(links) == 0 {
+		return grey + "None" + reset
+	}
+
+	result := strings.Join(links, ", ")
+	if len(result) > maxWidth {
+		result = result[:maxWidth-3] + "..."
+	}
+	return purple + result + reset
+}

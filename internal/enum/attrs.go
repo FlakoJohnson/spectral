@@ -65,6 +65,25 @@ var gpoAttrs = []string{
 	"versionNumber",
 	"flags",
 	"whenCreated",
+	"whenChanged",
+	"nTSecurityDescriptor",
+}
+
+// Enhanced GPO attributes for comprehensive analysis - requested in batches for stealth
+var gpoEnhancedAttrs = []string{
+	"displayName",
+	"distinguishedName",
+	"objectGUID",
+	"gPCFileSysPath",
+	"versionNumber",
+	"flags",
+	"whenCreated",
+	"whenChanged",
+	"objectVersion",
+	"gPCMachineExtensionNames", // CSE GUIDs for machine policies
+	"gPCUserExtensionNames",    // CSE GUIDs for user policies
+	"gPCWQLFilter",             // WMI filter DN reference
+	"gPCFunctionalityVersion",  // GPO functional version
 	"nTSecurityDescriptor",
 }
 
@@ -117,5 +136,29 @@ var ouAttrs = []string{
 	"gPOptions",
 	"description",
 	"whenCreated",
+	"nTSecurityDescriptor",
+}
+
+// WMI filter attributes for GPO analysis - queried separately to avoid suspicious patterns
+var wmiFilterAttrs = []string{
+	"msWMI-Name",
+	"msWMI-Parm1",          // WQL query string
+	"msWMI-Author",
+	"msWMI-ChangeDate",
+	"msWMI-CreationDate",
+	"distinguishedName",
+	"objectGUID",
+	"nTSecurityDescriptor",
+}
+
+// Site object attributes for site-level GPO links - often missed by scanners
+var siteAttrs = []string{
+	"name",
+	"distinguishedName",
+	"objectGUID",
+	"gPLink",            // Site-linked GPOs
+	"gPOptions",
+	"whenCreated",
+	"description",
 	"nTSecurityDescriptor",
 }
