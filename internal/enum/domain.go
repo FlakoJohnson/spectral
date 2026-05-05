@@ -34,6 +34,35 @@ func (e *Enumerator) Domain() (*DomainResult, error) {
 	return &DomainResult{Domain: domain, Forest: forest}, nil
 }
 
+// DomainObject collects the domain object with full ACL data for BloodHound.
+// This is essential for DCSync and domain-level privilege relationships.
+func (e *Enumerator) DomainObject() ([]adws.ADObject, error) {
+	if e.verbose {
+		log.Printf("%s [*] Enumerating domain object (ACLs)", ts())
+	}
+
+	domainAttrs := []string{
+		"distinguishedName",
+		"objectSid",
+		"objectGUID",
+		"name",
+		"description",
+		"whenCreated",
+		"nTSecurityDescriptor",
+	}
+
+	// Query the domain root object directly with full ACL data
+	results, err := e.queryWithRetry(e.domainDN, "(objectClass=domainDNS)", domainAttrs, 7, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if e.verbose {
+		log.Printf("%s [+] Domain object: %d", ts(), len(results))
+	}
+	return results, nil
+}
+
 // MachineQuota queries ms-DS-MachineAccountQuota from the domain root.
 func (e *Enumerator) MachineQuota() (string, error) {
 	objs, err := e.client.Query(

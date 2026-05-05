@@ -524,10 +524,13 @@ func (c *BHConverter) IndexObjects(users, computers, groups []adws.ADObject, ext
 			if _, exists := c.dnToSID[upper]; exists {
 				continue // already indexed (user/computer/group takes priority)
 			}
-			// Detect type: OU= prefix → OU, otherwise Container
+			// Detect type: OU= prefix → OU, DC= only → Domain, otherwise Container
 			objType := "Container"
 			if strings.HasPrefix(upper, "OU=") {
 				objType = "OU"
+			} else if strings.HasPrefix(upper, "DC=") && !strings.Contains(upper, "CN=") {
+				// Domain root: starts with DC= and has no CN= components
+				objType = "Domain"
 			}
 			c.dnToSID[upper] = guid
 			c.dnToType[upper] = objType
@@ -1037,12 +1040,12 @@ func (c *BHConverter) ConvertNTAuthStores(objects []adws.ADObject) []bhNTAuthSto
 // WriteBHZip serialises all collected data as BH CE JSON files inside a zip.
 func WriteBHZip(
 	outDir, filePrefix, domain, domainSID string,
-	users, computers, groups, gpos, trusts, ous, containers []adws.ADObject,
+	users, computers, groups, gpos, trusts, ous, containers, domainObjects []adws.ADObject,
 	domainInfo *enum.DomainResult,
 	adcsResult *enum.ADCSResult,
 ) error {
 	c := NewBHConverter(domain, domainSID)
-	c.IndexObjects(users, computers, groups, ous, containers)
+	c.IndexObjects(users, computers, groups, ous, containers, domainObjects)
 
 	zipPath := filepath.Join(outDir, fmt.Sprintf("%s_bloodhound.zip", filePrefix))
 	f, err := os.Create(zipPath)
@@ -1276,11 +1279,11 @@ func sdToBHAces(obj adws.ADObject, dnToSID map[string]string, dnToType map[strin
 			case "00299570-246d-11d0-a768-00aa006e0529":
 				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "ForceChangePassword", IsInherited: false})
 			case "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2":
-				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "GetChanges", IsInherited: false})
+				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "DCSync", IsInherited: false})
 			case "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2":
-				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "GetChangesAll", IsInherited: false})
+				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "DCSync", IsInherited: false})
 			case "1131f6ae-9c07-11d1-f79f-00c04fc2dcd2":
-				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "GetChangesInFilteredSet", IsInherited: false})
+				aces = append(aces, bhAce{PrincipalSID: principalSID, PrincipalType: principalType, RightName: "DCSync", IsInherited: false})
 			}
 		}
 		if mask&0x00000020 != 0 { // WriteProperty

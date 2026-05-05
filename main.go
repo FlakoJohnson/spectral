@@ -298,7 +298,7 @@ func main() {
 	// or when explicitly requested with -bh.
 	hasBHData := len(coll.users) > 0 || len(coll.computers) > 0 ||
 		len(coll.groups) > 0 || len(coll.gpos) > 0 || len(coll.trusts) > 0 ||
-		len(coll.ous) > 0 || coll.domainInfo != nil || coll.adcsResult != nil
+		len(coll.ous) > 0 || len(coll.domainObjects) > 0 || coll.domainInfo != nil || coll.adcsResult != nil
 	if *bhOut || hasBHData {
 		domainSID := coll.domainSID
 		// Auto-fetch domain SID via ADCAP if not yet resolved.
@@ -332,7 +332,7 @@ func main() {
 		}
 		if err := output.WriteBHZip(
 			*outDir, filePrefix, *domain, domainSID,
-			coll.users, coll.computers, coll.groups, coll.gpos, coll.trusts, coll.ous, coll.containers,
+			coll.users, coll.computers, coll.groups, coll.gpos, coll.trusts, coll.ous, coll.containers, coll.domainObjects,
 			coll.domainInfo,
 			coll.adcsResult,
 		); err != nil {
@@ -347,16 +347,17 @@ func main() {
 
 // collector accumulates sweep results for BloodHound output.
 type collector struct {
-	users      []adws.ADObject
-	computers  []adws.ADObject
-	groups     []adws.ADObject
-	gpos       []adws.ADObject
-	trusts     []adws.ADObject
-	ous        []adws.ADObject
-	containers []adws.ADObject
-	domainSID  string
-	domainInfo *enum.DomainResult
-	adcsResult *enum.ADCSResult
+	users         []adws.ADObject
+	computers     []adws.ADObject
+	groups        []adws.ADObject
+	gpos          []adws.ADObject
+	trusts        []adws.ADObject
+	ous           []adws.ADObject
+	containers    []adws.ADObject
+	domainObjects []adws.ADObject
+	domainSID     string
+	domainInfo    *enum.DomainResult
+	adcsResult    *enum.ADCSResult
 }
 
 // resolveGroupMembers queries ADWS for any group member DNs that couldn't be
@@ -524,6 +525,10 @@ func runModeCollect(e *enum.Enumerator, w *output.Writer, m string, staleDays in
 					}
 				}
 			}
+		}
+		// Also collect domain object with ACLs for BloodHound DCSync relationships
+		if domainObjs, dobjErr := e.DomainObject(); dobjErr == nil {
+			coll.domainObjects = append(coll.domainObjects, domainObjs...)
 		}
 	case "computers":
 		data, err := e.Computers()
