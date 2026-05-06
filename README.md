@@ -13,16 +13,27 @@ Built on top of [sopa](https://github.com/Macmod/sopa).
 
 ## Build
 
+Requires Go 1.24+. If Go is not in your PATH, install it first:
+
+```bash
+# Download and extract (adjust version as needed)
+wget https://go.dev/dl/go1.24.1.linux-amd64.tar.gz
+tar -C ~/ -xzf go1.24.1.linux-amd64.tar.gz
+export PATH="$HOME/go/bin:$PATH"
+```
+
+Then build:
+
 ```bash
 git clone git@github.com:FlakoJohnson/spectral.git
 cd spectral
-make setup   # vendors deps + applies go-adws proxy patch (run once)
 make build
 ```
 
-Produces a stripped, static `spectral` binary (no CGO, no debug symbols).
+> **`make setup` is only needed after `go mod tidy` or dependency changes.**
+> Fresh clones already have vendor committed — `make build` is all you need.
 
-> **Re-run `make setup` after `go mod tidy` or any dependency update.**
+Produces a stripped, static `spectral` binary (no CGO, no debug symbols).
 
 ## Proxy / tunnelling
 
@@ -47,14 +58,15 @@ All traffic — ADWS (port 9389), Kerberos KDC (port 88), and the unauthenticate
 Usage: spectral [options]
 
 Connection:
-  -t  string   Target DC address (IP or hostname)
+  -t  string   Target DC address (IP or hostname)  [required]
   -d  string   Domain FQDN (e.g. corp.local — NOT the NetBIOS short name)
   -u  string   Username
   -p  string   Password
   -H  string   NT hash (pass-the-hash)
   -k           Use Kerberos (reads KRB5CCNAME env or -c path)
   -c  string   Kerberos ccache path
-  -r  string   Port (default: 9389)
+  -r  string   ADWS port (default: 9389)
+  -l  string   LDAP port for rootdse (default: 389)
 
 Enumeration:
   -m  string   Modes, comma-separated
@@ -63,9 +75,10 @@ Enumeration:
                Targeted: kerberoastable, asreproast, unconstrained,
                          constrained, rbcd, admincount, shadowcreds,
                          laps, pwdnoexpire, stale, fgpp, adcs
-               Misc:     machinequota
+               GPO Analysis: gpos-enhanced, wmifilters, sitegpos
+
                Shorthand:
-                 sweep    — all sweep modes (users, computers, groups, gpos, trusts, ous, domain)
+                 sweep    — all sweep modes (users, computers, groups, gpos, trusts, domain)
                  targeted — all attack-path modes (kerberoastable, asreproast, delegation, etc.)
                  full     — sweep + targeted combined
 
@@ -83,19 +96,17 @@ Enumeration:
                  -b "OU=Sales,DC=corp,DC=local" -b "OU=IT,DC=corp,DC=local"
 
 Output & pacing:
-  -o  string   Output directory (default: ./<IP>_<YYYYMMDD>/)
+  -o  string   Output directory (default: .)
   -j  int      Jitter between requests in ms (default: 500)
   -P  int      Pause between object types in ms (default: 2000)
   -B  int      Batch size per ADWS pull (default: 100)
   -q           Quiet
   -x           Debug SOAP XML
-  -bh          Also write BloodHound CE zip (auto-generated when sweep data is collected)
 
-Stealth:
-  -s           Stealth mode: randomize filters, attrs, batch sizes, query order,
-               suppress banner, obfuscate output filenames. Implies -q.
-  -Bmin int    Minimum batch size for stealth randomization (default: 75)
-  -Bmax int    Maximum batch size for stealth randomization (default: 125)
+Stealth (enabled by default):
+  --no-stealth Disable stealth features (faster but noisier — may trigger MDI)
+  -Bmin int    Minimum batch size for randomization (default: 75)
+  -Bmax int    Maximum batch size for randomization (default: 125)
 
 Proxy:
   -proxy string  SOCKS5 proxy URL (e.g. socks5://127.0.0.1:1080)
@@ -117,6 +128,12 @@ export ALL_PROXY=socks5://127.0.0.1:1080
 ./spectral -t 10.10.10.5 -d corp.local -u jdoe -k -m targeted -o ./out
 ```
 
+**GPO analysis (enhanced metadata + WMI filters + site-level links):**
+```bash
+./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> \
+  -m gpos-enhanced,wmifilters,sitegpos -o ./out
+```
+
 **Single user deep-dive:**
 ```bash
 ./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -T user:svc_backup
@@ -136,11 +153,6 @@ export ALL_PROXY=socks5://127.0.0.1:1080
 ```bash
 ./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> \
   -m targeted -j 2000 -P 5000 -B 50 -o ./out
-```
-
-**BloodHound CE output (always generated):**
-```bash
-./spectral -proxy socks5://127.0.0.1:1080 -t 10.10.10.5 -d corp.local -u jdoe -H <nthash> -m sweep -o ./out
 ```
 
 ## Sweep modes
@@ -167,9 +179,17 @@ The `ous` mode enumerates all organizational units with their linked GPOs and GP
 | `adcs` | AD CS — enterprise CAs, templates, ESC1/2/3/4/6/7/9/15 findings | `(objectClass=pKIcertificateTemplate)` + `(objectClass=pKIEnrollmentService)` |
 | `machinequota` | ms-DS-MachineAccountQuota value from domain root | Domain root ADCAP query |
 
+## GPO Analysis modes
+
+| Mode | What it finds | Notes |
+|---|---|---|
+| `gpos-enhanced` | GPOs with extended metadata (version, creation/modification timestamps, WMI filter links, security settings) | Splits attribute queries to reduce per-request footprint |
+| `wmifilters` | WMI filters linked to GPOs (name, query, author, description) | Queries `CN=SOM,CN=WMIPolicy,CN=System` directly — most scanners skip this container |
+| `sitegpos` | Site-level GPO links from the configuration partition | Queries `CN=Sites` in the config partition; only returns sites with active GPO links |
+
 ## BloodHound CE output
 
-BloodHound data is automatically generated by default as BH CE v6 zip with full containment hierarchy:
+BloodHound data is automatically generated with every run that collects sweep data — no flag required. Output is a BH CE v6 zip with full containment hierarchy:
 
 - **ContainedBy edges** — Users, computers, groups, GPOs, and OUs include `ContainedBy` edges linking each object to its parent OU or domain. This enables GPO->OU->object traversal in BloodHound for attack path analysis.
 - **OUs and Containers** — OU nodes are included with GPO links and ACLs. Container objects (e.g. `CN=Users`, `CN=Computers`) are auto-collected for accurate placement.
@@ -186,7 +206,7 @@ For domains with large ADWS responses (e.g. 9600+ computers), two features help 
 ./spectral -t 10.210.96.61 -d amer.corp.local -u svc -p pass \
   -b "OU=East,DC=amer,DC=corp,DC=local" \
   -b "OU=West,DC=amer,DC=corp,DC=local" \
-  -m sweep -bh
+  -m sweep
 ```
 
 **Split SD fetch for lookups** — `-T` wildcard lookups (e.g. `-T user:*admin*`) first query with `sdFlags=0` (no security descriptors), then re-fetch each matched object individually by DN with `sdFlags=7` for ACL data. This avoids oversized responses on broad searches.
@@ -196,6 +216,7 @@ For domains with large ADWS responses (e.g. 9600+ computers), two features help 
 - Uses `(objectCategory=person)(objectClass=user)` style filters — same as RSAT/PowerShell AD module, not `(!FALSE)`
 - GPOs and trusts are scoped to their containers (`CN=Policies,CN=System` / `CN=System`) rather than a full domain sweep
 - `kerberoastable` and `asreproast` issue a plain user sweep on the wire and filter client-side — the ADWS log shows `(&(objectCategory=person)(objectClass=user))`, not an SPN/UAC bitmask query. MDI fingerprints `(servicePrincipalName=*)` in the filter as "Possible SPN enumeration via ADWS".
+- Stealth mode is on by default: randomizes filters, attribute ordering, batch sizes, and query order. Use `--no-stealth` to disable (faster but noisier).
 - Configurable jitter and batch size to control query volume
 - Binary is built with `-s -w -trimpath` to strip symbols and build paths
 - SDFlags:0x7 is used selectively (per-object re-fetch and member resolution), not as a bulk sweep pattern like SOAPHound
@@ -231,7 +252,7 @@ Output is organized for evidence keeping. Directory and filenames include the ta
 └── ...
 ```
 
-In stealth mode (`-s`), filenames are obfuscated to SHA256 hashes with a `.manifest.json` for decoding.
+In stealth mode (default), filenames are obfuscated to SHA256 hashes with a `.manifest.json` for decoding.
 
 Each file is wrapped with collection metadata:
 
