@@ -175,6 +175,7 @@ The `-bh` flag generates a BH CE v6 zip with full containment hierarchy:
 - **OUs and Containers** — OU nodes are included with GPO links and ACLs. Container objects (e.g. `CN=Users`, `CN=Computers`) are auto-collected for accurate placement.
 - **Member resolution** — Group member DNs are resolved to SIDs via ADWS before zip generation to avoid orphan DN-stub nodes.
 - **ACE principal resolution** — Unknown SIDs in ACEs are resolved to named nodes for inbound object control visibility.
+- **Domain ACE processing** — Domain object ACLs are collected and processed for DCSync detection. Identifies AllExtendedRights, DCSync, WriteDacl, and other domain-level privileges essential for privilege escalation analysis.
 
 ## Large domain support
 
